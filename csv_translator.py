@@ -1,0 +1,460 @@
+#!/usr/bin/env python3
+"""
+CSV Translation Script
+======================
+
+This script translates specified columns in a CSV file from English to Dutch
+using the Google Translate API via the googletrans library.
+
+Usage:
+    python csv_translator.py
+
+Features:
+- Reads CSV files with products or other data
+- Translates specified columns from English to Dutch (Netherlands)
+- Preserves original data and adds translated columns
+- Handles translation errors gracefully
+- Uses free Google Translate API (no API key required)
+
+Author: Generated for CSV Translation Project
+Date: June 2025
+"""
+
+import pandas as pd
+import time
+import sys
+import os
+import re
+from typing import List, Dict, Optional
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('translation.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Try to import translation libraries in order of preference
+TRANSLATOR_TYPE = None
+try:
+    from deep_translator import GoogleTranslator
+    TRANSLATOR_TYPE = "deep_translator"
+    logger.info("Using deep-translator library")
+except ImportError:
+    try:
+        from googletrans import Translator
+        TRANSLATOR_TYPE = "googletrans"
+        logger.info("Using googletrans library")
+    except ImportError:
+        logger.error("No translation library available. Please install deep-translator or googletrans")
+        TRANSLATOR_TYPE = None
+
+# Try to import BeautifulSoup for better HTML handling
+try:
+    from bs4 import BeautifulSoup
+    HTML_PARSER_AVAILABLE = True
+    logger.info("BeautifulSoup available for advanced HTML parsing")
+except ImportError:
+    HTML_PARSER_AVAILABLE = False
+    logger.info("BeautifulSoup not available, using regex for HTML parsing")
+
+
+class CSVTranslator:
+    """A class to handle CSV file translation from English to Dutch."""
+    
+    def __init__(self, delay_between_requests: float = 0.1):
+        """
+        Initialize the CSV translator.
+        
+        Args:
+            delay_between_requests: Delay in seconds between translation requests
+                                  to avoid rate limiting
+        """
+        if TRANSLATOR_TYPE is None:
+            raise ImportError("No translation library available. Please install deep-translator or googletrans")
+        
+        self.delay = delay_between_requests
+        self.source_lang = 'en'  # English
+        self.target_lang = 'nl'  # Dutch (Netherlands)
+        
+        # Initialize the appropriate translator
+        if TRANSLATOR_TYPE == "deep_translator":
+            self.translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)
+        elif TRANSLATOR_TYPE == "googletrans":
+            self.translator = Translator()
+        else:
+            raise ImportError("No valid translator found")
+        
+    def translate_text(self, text: str) -> str:
+        """
+        Translate a single text string from English to Dutch.
+        Automatically detects and handles HTML content properly.
+        
+        Args:
+            text: Text to translate (can contain HTML)
+            
+        Returns:
+            Translated text with preserved HTML structure
+        """
+        if not text or pd.isna(text):
+            return text
+            
+        try:
+            # Convert to string and strip whitespace
+            text_str = str(text).strip()
+            if not text_str:
+                return text
+            
+            # Check if content contains HTML
+            if self.is_html_content(text_str):
+                logger.debug(f"Detected HTML content, using HTML-aware translation")
+                translated = self.translate_html_content(text_str)
+            else:
+                # Plain text translation
+                translated = self._translate_plain_text(text_str)
+                
+            logger.debug(f"Translated: '{text_str[:50]}...' -> '{translated[:50]}...'")
+            
+            return translated
+            
+        except Exception as e:
+            logger.warning(f"Translation failed for '{text}': {e}")
+            return text  # Return original text if translation fails
+    
+    def translate_column(self, df: pd.DataFrame, column_name: str) -> pd.Series:
+        """
+        Translate an entire column of the DataFrame.
+        
+        Args:
+            df: DataFrame containing the data
+            column_name: Name of the column to translate
+              Returns:
+            Series with translated values
+        """
+        if column_name not in df.columns:
+            logger.error(f"Column '{column_name}' not found in DataFrame")
+            return pd.Series()
+            
+        logger.info(f"Translating column: {column_name}")
+        
+        translated_values = []
+        total_rows = len(df[column_name])
+        
+        for idx, value in enumerate(df[column_name]):
+            if idx % 10 == 0:  # Progress update every 10 rows
+                logger.info(f"Progress: {idx + 1}/{total_rows} rows processed")
+                
+            translated_value = self.translate_text(value)
+            translated_values.append(translated_value)
+            
+        logger.info(f"Completed translation of column: {column_name}")
+        return pd.Series(translated_values, index=df.index)
+    
+    def translate_csv(self, 
+                     input_file: str, 
+                     output_file: str, 
+                     columns_to_translate: List[str],
+                     append_suffix: str = "_dutch",
+                     delimiter: str = ",") -> bool:
+        """
+        Translate specified columns in a CSV file and save the result.
+        
+        Args:
+            input_file: Path to input CSV file
+            output_file: Path to output CSV file
+            columns_to_translate: List of column names to translate
+            append_suffix: Suffix to append to translated column names
+            delimiter: CSV delimiter (comma "," or semicolon ";")
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Read the CSV file with specified delimiter
+            logger.info(f"Reading CSV file: {input_file} (delimiter: '{delimiter}')")
+            df = pd.read_csv(input_file, encoding='utf-8', delimiter=delimiter)
+            logger.info(f"Loaded {len(df)} rows and {len(df.columns)} columns")
+            
+            # Log column names for reference
+            logger.info(f"Available columns: {list(df.columns)}")
+            
+            # Validate columns exist
+            missing_columns = [col for col in columns_to_translate if col not in df.columns]
+            if missing_columns:
+                logger.error(f"Missing columns: {missing_columns}")
+                return False
+            
+            # Create a copy of the original DataFrame
+            result_df = df.copy()
+            
+            # Translate each specified column
+            for column in columns_to_translate:
+                logger.info(f"Starting translation of column: {column}")
+                translated_column = self.translate_column(df, column)
+                
+                # Add translated column with suffix
+                new_column_name = f"{column}{append_suffix}"
+                result_df[new_column_name] = translated_column
+                  # Save the result with the same delimiter
+            logger.info(f"Saving translated CSV to: {output_file} (delimiter: '{delimiter}')")
+            result_df.to_csv(output_file, index=False, encoding='utf-8', sep=delimiter)
+            
+            logger.info("Translation completed successfully!")
+            logger.info(f"Original columns: {len(df.columns)}")
+            logger.info(f"Final columns: {len(result_df.columns)}")
+            
+            return True
+            
+        except FileNotFoundError:
+            logger.error(f"Input file not found: {input_file}")
+            return False
+        except Exception as e:
+            logger.error(f"Error during translation: {e}")
+            return False
+
+    def is_html_content(self, text: str) -> bool:
+        """
+        Check if the text contains HTML tags.
+        
+        Args:
+            text: Text to check
+            
+        Returns:
+            True if text contains HTML tags, False otherwise
+        """
+        if not text:
+            return False
+        
+        # Simple regex to detect HTML tags
+        html_pattern = re.compile(r'<[^>]+>')
+        return bool(html_pattern.search(str(text)))
+    
+    def translate_html_content(self, html_text: str) -> str:
+        """
+        Translate HTML content while preserving HTML tags and structure.
+        
+        Args:
+            html_text: HTML content to translate
+            
+        Returns:
+            Translated HTML with preserved structure
+        """
+        if not html_text or pd.isna(html_text):
+            return html_text
+            
+        try:
+            html_str = str(html_text).strip()
+            if not html_str:
+                return html_text
+                
+            if HTML_PARSER_AVAILABLE:
+                return self._translate_html_with_beautifulsoup(html_str)
+            else:
+                return self._translate_html_with_regex(html_str)
+                
+        except Exception as e:
+            logger.warning(f"HTML translation failed for '{html_text[:50]}...': {e}")
+            return html_text
+    
+    def _translate_html_with_beautifulsoup(self, html_text: str) -> str:
+        """
+        Translate HTML using BeautifulSoup for proper parsing.
+        """
+        try:
+            soup = BeautifulSoup(html_text, 'html.parser')
+            
+            # Find all text nodes (not inside script/style tags)
+            for text_node in soup.find_all(string=True):
+                if text_node.parent.name not in ['script', 'style', 'meta', 'title']:
+                    text_content = text_node.strip()
+                    if text_content and len(text_content) > 1:
+                        translated = self._translate_plain_text(text_content)
+                        text_node.replace_with(translated)
+            
+            return str(soup)
+            
+        except Exception as e:
+            logger.warning(f"BeautifulSoup HTML parsing failed: {e}")
+            return self._translate_html_with_regex(html_text)
+    
+    def _translate_html_with_regex(self, html_text: str) -> str:
+        """
+        Translate HTML using regex (fallback method).
+        """
+        try:
+            # Pattern to match text outside of HTML tags
+            # This is a simplified approach - BeautifulSoup is preferred
+            def translate_match(match):
+                text_content = match.group(0).strip()
+                if len(text_content) > 1 and not text_content.startswith('<'):
+                    return self._translate_plain_text(text_content)
+                return text_content
+            
+            # Find text outside of tags
+            pattern = r'>([^<]+)<'
+            translated = re.sub(pattern, lambda m: f'>{self._translate_plain_text(m.group(1))}<', html_text)
+            
+            # Handle text at the beginning and end
+            if not html_text.startswith('<'):
+                first_tag_pos = html_text.find('<')
+                if first_tag_pos > 0:
+                    prefix = html_text[:first_tag_pos].strip()
+                    if prefix:
+                        translated = self._translate_plain_text(prefix) + html_text[first_tag_pos:]
+            
+            return translated
+            
+        except Exception as e:
+            logger.warning(f"Regex HTML parsing failed: {e}")
+            return html_text
+    
+    def _translate_plain_text(self, text: str) -> str:
+        """
+        Translate plain text without HTML.
+        
+        Args:
+            text: Plain text to translate
+            
+        Returns:
+            Translated text
+        """
+        if not text or len(text.strip()) <= 1:
+            return text
+            
+        try:
+            text_clean = text.strip()
+            
+            # Translate using the appropriate library
+            if TRANSLATOR_TYPE == "deep_translator":
+                translated = self.translator.translate(text_clean)
+            elif TRANSLATOR_TYPE == "googletrans":
+                result = self.translator.translate(
+                    text_clean, 
+                    src=self.source_lang, 
+                    dest=self.target_lang
+                )
+                translated = result.text
+            else:
+                return text
+                
+            # Add delay to avoid rate limiting
+            time.sleep(self.delay)
+            
+            return translated
+            
+        except Exception as e:
+            logger.warning(f"Plain text translation failed for '{text}': {e}")
+            return text
+    
+def get_user_input() -> Dict[str, any]:
+    """Get user input for translation parameters."""
+    print("=== CSV Translation Script ===")
+    print("This script translates CSV columns from English to Dutch")
+    print()
+    
+    # Get CSV delimiter preference
+    print("Choose CSV delimiter:")
+    print("  1. Comma (,) - Standard CSV format")
+    print("  2. Semicolon (;) - European CSV format")
+    delimiter_choice = input("Enter choice (1 or 2, default: 1): ").strip()
+    
+    if delimiter_choice == "2":
+        delimiter = ";"
+        print("Selected: Semicolon (;) delimiter")
+    else:
+        delimiter = ","
+        print("Selected: Comma (,) delimiter")
+    print()
+    
+    # Get input file
+    input_file = input("Enter the path to your CSV file: ").strip().strip('"')
+    if not os.path.exists(input_file):
+        print(f"Error: File '{input_file}' not found!")
+        return {}
+    
+    # Load CSV to show available columns
+    try:
+        df_preview = pd.read_csv(input_file, nrows=0, delimiter=delimiter)  # Just read headers
+        print(f"\nAvailable columns in your CSV:")
+        for i, col in enumerate(df_preview.columns, 1):
+            print(f"  {i}. {col}")
+    except Exception as e:
+        print(f"Error reading CSV file with {delimiter} delimiter: {e}")
+        print("Try using the other delimiter option.")
+        return {}
+    
+    # Get columns to translate
+    print("\nWhich columns would you like to translate?")
+    print("Enter column names separated by commas (e.g., name, description)")
+    columns_input = input("Columns to translate: ").strip()
+    
+    if not columns_input:
+        print("No columns specified!")
+        return {}
+    
+    columns_to_translate = [col.strip() for col in columns_input.split(',')]
+      # Get output file
+    default_output = input_file.replace('.csv', '_translated.csv')
+    output_file = input(f"Output file path (default: {default_output}): ").strip().strip('"')
+    if not output_file:
+        output_file = default_output
+    
+    return {
+        'input_file': input_file,
+        'output_file': output_file,
+        'columns_to_translate': columns_to_translate,
+        'delimiter': delimiter
+    }
+
+
+def main():
+    """Main function to run the CSV translation script."""
+    print("CSV Translation Script - English to Dutch")
+    print("=" * 50)
+    
+    # Example usage - uncomment and modify for automated processing
+    # translator = CSVTranslator(delay_between_requests=0.1)
+    # success = translator.translate_csv(
+    #     input_file="products.csv",
+    #     output_file="products_translated.csv",
+    #     columns_to_translate=["name", "description"]
+    # )
+    
+    # Interactive mode
+    params = get_user_input()
+    if not params:
+        print("Exiting due to invalid input.")
+        return
+    
+    # Create translator instance
+    translator = CSVTranslator(delay_between_requests=0.1)
+    
+    # Perform translation    print(f"\nStarting translation...")
+    print(f"Input file: {params['input_file']}")
+    print(f"Output file: {params['output_file']}")
+    print(f"Columns to translate: {params['columns_to_translate']}")
+    print(f"CSV delimiter: '{params['delimiter']}'")
+    print("\nThis may take a while depending on the size of your file...")
+    
+    success = translator.translate_csv(
+        input_file=params['input_file'],
+        output_file=params['output_file'],
+        columns_to_translate=params['columns_to_translate'],
+        delimiter=params['delimiter']
+    )
+    
+    if success:
+        print(f"\n✅ Translation completed successfully!")
+        print(f"📁 Translated file saved as: {params['output_file']}")
+        print(f"📋 Log file: translation.log")
+    else:
+        print(f"\n❌ Translation failed. Check the log file for details.")
+
+
+if __name__ == "__main__":
+    main()

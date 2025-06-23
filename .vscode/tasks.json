@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run CSV Translator",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"csv_translator.py"
+			],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

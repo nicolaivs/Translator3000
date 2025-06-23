@@ -1,0 +1,25 @@
+# CSV Translation Script Dependencies
+# ===================================
+
+# Data manipulation and CSV handling
+pandas>=2.0.0
+
+# Translation libraries (try these in order of preference)
+# Option 1: More stable deep-translator library
+deep-translator>=1.9.0
+
+# Option 2: googletrans (fallback)
+googletrans==3.1.0a0
+
+# HTML parsing for preserving HTML structure during translation
+beautifulsoup4>=4.12.0
+
+# Additional utilities for robust translation
+requests>=2.28.0
+urllib3>=1.26.0
+
+# Development and testing (optional)
+pytest>=7.0.0
+
+# Development and testing (optional)
+pytest>=7.0.0

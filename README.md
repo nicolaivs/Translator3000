@@ -24,7 +24,7 @@ A Python script for translating CSV file columns between multiple languages usin
 - **French** (fr)
 - **German** (de)
 - **Italian** (it)
-- **Norwegian Bokmål** (nb)
+- **Norwegian (Bokmål)** (no)
 - **Spanish** (es)
 - **Swedish** (sv)
 
@@ -65,7 +65,7 @@ CSV Translator/
    python csv_translator.py
    ```
 3. **Select your languages** (source language of your data, target language for translation)
-4. **Follow the prompts** to select files and columns to translate
+4. **Follow the prompts** to select files and columns to translate (by number, e.g., 1,3)
 5. **Find your translated files** in the `target/` folder
 
 ### Interactive Mode (Detailed)
@@ -77,11 +77,11 @@ CSV Translator/
 
 2. The script will:
    - Ask you to choose source language (Danish or English, default: English)
-   - Ask you to choose target language from 9 supported options
+   - Ask you to choose target language from 10 supported options
    - Automatically show CSV files in the `source/` folder
    - Let you choose which file to translate
-   - Show available columns in your CSV
-   - Ask which columns you want to translate
+   - Show available columns in your CSV with numbers
+   - Ask which columns you want to translate (by number, e.g., "1,3" or "2,4,5")
    - Save the translated file to the `target/` folder
 
 ### Programmatic Usage
@@ -120,7 +120,7 @@ translator = CSVTranslator(
 | French | `fr` |
 | German | `de` |
 | Italian | `it` |
-| Norwegian (Bokmål) | `nb` |
+| Norwegian (Bokmål) | `no` |
 | Spanish | `es` |
 | Swedish | `sv` |
 

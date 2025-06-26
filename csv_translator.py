@@ -58,7 +58,7 @@ SUPPORTED_LANGUAGES = {
     'fr': 'French',
     'de': 'German',
     'it': 'Italian',
-    'nb': 'Norwegian (Bokmål)',
+    'no': 'Norwegian (Bokmål)',
     'es': 'Spanish',
     'sv': 'Swedish'
 }
@@ -398,8 +398,7 @@ def get_language_preferences() -> Dict[str, str]:
     else:
         source_lang = "en"
         print("Selected: English")
-    
-    # Target language selection
+      # Target language selection
     print(f"\nSelect target language (translate TO):")
     lang_options = [
         ('da', 'Danish'),
@@ -409,7 +408,7 @@ def get_language_preferences() -> Dict[str, str]:
         ('fr', 'French'),
         ('de', 'German'),
         ('it', 'Italian'),
-        ('nb', 'Norwegian (Bokmål)'),
+        ('no', 'Norwegian (Bokmål)'),
         ('es', 'Spanish'),
         ('sv', 'Swedish')
     ]
@@ -500,29 +499,45 @@ def get_user_input() -> Dict[str, any]:
         delimiter = ","
         print("Selected: Comma (,) delimiter")
     print()
-    
-    # Load CSV to show available columns
+      # Load CSV to show available columns
     try:
         df_preview = pd.read_csv(input_file, nrows=0, delimiter=delimiter)  # Just read headers
         print(f"\nAvailable columns in '{selected_file.name}':")
-        for i, col in enumerate(df_preview.columns, 1):
+        columns_list = list(df_preview.columns)
+        for i, col in enumerate(columns_list, 1):
             print(f"  {i}. {col}")
     except Exception as e:
         print(f"Error reading CSV file with {delimiter} delimiter: {e}")
         print("Try using the other delimiter option.")
         return {}
     
-    # Get columns to translate
+    # Get columns to translate by numbers
     print("\nWhich columns would you like to translate?")
-    print("Enter column names separated by commas (e.g., name, description)")
-    columns_input = input("Columns to translate: ").strip()
+    print("Enter column numbers separated by commas (e.g., 1,3 or 2,4,5)")
+    columns_input = input("Column numbers: ").strip()
     
     if not columns_input:
         print("No columns specified!")
         return {}
     
-    columns_to_translate = [col.strip() for col in columns_input.split(',')]
-      # Generate output file path in target directory
+    # Parse column numbers and convert to column names
+    try:
+        column_numbers = [int(num.strip()) for num in columns_input.split(',')]
+        columns_to_translate = []
+        
+        for num in column_numbers:
+            if 1 <= num <= len(columns_list):
+                columns_to_translate.append(columns_list[num - 1])
+            else:
+                print(f"Invalid column number: {num}. Must be between 1 and {len(columns_list)}")
+                return {}        
+        print(f"Selected columns: {', '.join(columns_to_translate)}")
+        
+    except ValueError:
+        print("Invalid input! Please enter numbers separated by commas.")
+        return {}
+    
+    # Generate output file path in target directory
     output_filename = selected_file.stem + '_translated.csv'
     output_file = str(TARGET_DIR / output_filename)
     print(f"\nOutput will be saved to: {output_file}")

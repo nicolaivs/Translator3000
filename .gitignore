@@ -10,6 +10,10 @@ __pycache__/
 build/
 out/
 
+# CSV Translation Project folders
+source/
+target/
+
 # Distribution / packaging
 .Python
 build/

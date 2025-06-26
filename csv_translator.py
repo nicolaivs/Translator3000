@@ -27,6 +27,7 @@ import os
 import re
 from typing import List, Dict, Optional
 import logging
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
@@ -38,6 +39,15 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Define project directories
+PROJECT_ROOT = Path(__file__).parent
+SOURCE_DIR = PROJECT_ROOT / "source"
+TARGET_DIR = PROJECT_ROOT / "target"
+
+# Ensure directories exist
+SOURCE_DIR.mkdir(exist_ok=True)
+TARGET_DIR.mkdir(exist_ok=True)
 
 # Try to import translation libraries in order of preference
 TRANSLATOR_TYPE = None
@@ -355,10 +365,42 @@ def get_user_input() -> Dict[str, any]:
     """Get user input for translation parameters."""
     print("=== CSV Translation Script ===")
     print("This script translates CSV columns from English to Dutch")
+    print(f"Source files should be placed in: {SOURCE_DIR}")
+    print(f"Translated files will be saved to: {TARGET_DIR}")
     print()
     
+    # List available CSV files in source directory
+    csv_files = list(SOURCE_DIR.glob("*.csv"))
+    if not csv_files:
+        print(f"No CSV files found in {SOURCE_DIR}")
+        print("Please place your CSV files in the 'source' folder and try again.")
+        return {}
+    
+    print("Available CSV files in source folder:")
+    for i, file_path in enumerate(csv_files, 1):
+        print(f"  {i}. {file_path.name}")
+    print()
+    
+    # Get file selection
+    if len(csv_files) == 1:
+        selected_file = csv_files[0]
+        print(f"Auto-selected: {selected_file.name}")
+    else:
+        try:
+            choice = int(input("Select a file (enter number): ").strip())
+            if 1 <= choice <= len(csv_files):
+                selected_file = csv_files[choice - 1]
+            else:
+                print("Invalid selection!")
+                return {}
+        except ValueError:
+            print("Invalid input! Please enter a number.")
+            return {}
+    
+    input_file = str(selected_file)
+    
     # Get CSV delimiter preference
-    print("Choose CSV delimiter:")
+    print("\nChoose CSV delimiter:")
     print("  1. Comma (,) - Standard CSV format")
     print("  2. Semicolon (;) - European CSV format")
     delimiter_choice = input("Enter choice (1 or 2, default: 1): ").strip()
@@ -371,16 +413,10 @@ def get_user_input() -> Dict[str, any]:
         print("Selected: Comma (,) delimiter")
     print()
     
-    # Get input file
-    input_file = input("Enter the path to your CSV file: ").strip().strip('"')
-    if not os.path.exists(input_file):
-        print(f"Error: File '{input_file}' not found!")
-        return {}
-    
     # Load CSV to show available columns
     try:
         df_preview = pd.read_csv(input_file, nrows=0, delimiter=delimiter)  # Just read headers
-        print(f"\nAvailable columns in your CSV:")
+        print(f"\nAvailable columns in '{selected_file.name}':")
         for i, col in enumerate(df_preview.columns, 1):
             print(f"  {i}. {col}")
     except Exception as e:
@@ -398,11 +434,11 @@ def get_user_input() -> Dict[str, any]:
         return {}
     
     columns_to_translate = [col.strip() for col in columns_input.split(',')]
-      # Get output file
-    default_output = input_file.replace('.csv', '_translated.csv')
-    output_file = input(f"Output file path (default: {default_output}): ").strip().strip('"')
-    if not output_file:
-        output_file = default_output
+    
+    # Generate output file path in target directory
+    output_filename = selected_file.stem + '_translated.csv'
+    output_file = str(TARGET_DIR / output_filename)
+    print(f"\nOutput will be saved to: {output_file}")
     
     return {
         'input_file': input_file,
@@ -417,11 +453,19 @@ def main():
     print("CSV Translation Script - English to Dutch")
     print("=" * 50)
     
-    # Example usage - uncomment and modify for automated processing
+    # Ensure directories exist
+    SOURCE_DIR.mkdir(exist_ok=True)
+    TARGET_DIR.mkdir(exist_ok=True)
+    
+    print(f"📁 Source directory: {SOURCE_DIR}")
+    print(f"📁 Target directory: {TARGET_DIR}")
+    print()
+    
+    # Example usage for automated processing (uncomment and modify as needed)
     # translator = CSVTranslator(delay_between_requests=0.1)
     # success = translator.translate_csv(
-    #     input_file="products.csv",
-    #     output_file="products_translated.csv",
+    #     input_file=str(SOURCE_DIR / "products.csv"),
+    #     output_file=str(TARGET_DIR / "products_translated.csv"),
     #     columns_to_translate=["name", "description"]
     # )
     
@@ -434,7 +478,8 @@ def main():
     # Create translator instance
     translator = CSVTranslator(delay_between_requests=0.1)
     
-    # Perform translation    print(f"\nStarting translation...")
+    # Perform translation
+    print(f"\nStarting translation...")
     print(f"Input file: {params['input_file']}")
     print(f"Output file: {params['output_file']}")
     print(f"Columns to translate: {params['columns_to_translate']}")
@@ -452,6 +497,7 @@ def main():
         print(f"\n✅ Translation completed successfully!")
         print(f"📁 Translated file saved as: {params['output_file']}")
         print(f"📋 Log file: translation.log")
+        print(f"📂 Check the 'target' folder for your translated file")
     else:
         print(f"\n❌ Translation failed. Check the log file for details.")
 

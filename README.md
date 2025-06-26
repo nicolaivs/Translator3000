@@ -12,6 +12,18 @@ A Python script for translating CSV file columns from English to Dutch using the
 - 📊 **Progress Tracking**: Real-time progress updates and logging
 - ⚡ **Rate Limiting**: Built-in delays to avoid API throttling
 - 🔧 **Delimiter Choice**: Support for both comma (,) and semicolon (;) delimited CSV files
+- 📁 **Organized Workflow**: Automatic source/target folder management
+
+## Project Structure
+
+```
+CSV Translator/
+├── source/           # Place your CSV files here for translation
+├── target/           # Translated files are saved here
+├── csv_translator.py # Main translation script
+├── requirements.txt  # Python dependencies
+└── README.md        # This file
+```
 
 ## Installation
 
@@ -31,18 +43,29 @@ A Python script for translating CSV file columns from English to Dutch using the
 
 ## Usage
 
-### Interactive Mode (Recommended for beginners)
+### Quick Start
+
+1. **Place your CSV files** in the `source/` folder
+2. **Run the script**:
+   ```bash
+   python csv_translator.py
+   ```
+3. **Follow the prompts** to select files and columns to translate
+4. **Find your translated files** in the `target/` folder
+
+### Interactive Mode (Detailed)
 
 1. Run the script:
    ```bash
    python csv_translator.py
    ```
 
-2. Follow the prompts:
-   - Choose CSV delimiter (comma or semicolon)
-   - Enter the path to your CSV file
-   - Select which columns to translate
-   - Specify the output file name
+2. The script will:
+   - Automatically show CSV files in the `source/` folder
+   - Let you choose which file to translate
+   - Show available columns in your CSV
+   - Ask which columns you want to translate
+   - Save the translated file to the `target/` folder
 
 ### Programmatic Usage
 

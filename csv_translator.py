@@ -49,6 +49,20 @@ TARGET_DIR = PROJECT_ROOT / "target"
 SOURCE_DIR.mkdir(exist_ok=True)
 TARGET_DIR.mkdir(exist_ok=True)
 
+# Supported languages for translation
+SUPPORTED_LANGUAGES = {
+    'da': 'Danish',
+    'nl': 'Dutch (Netherlands)',
+    'nl-be': 'Dutch (Flemish)',
+    'en': 'English',
+    'fr': 'French',
+    'de': 'German',
+    'it': 'Italian',
+    'nb': 'Norwegian (Bokmål)',
+    'es': 'Spanish',
+    'sv': 'Swedish'
+}
+
 # Try to import translation libraries in order of preference
 TRANSLATOR_TYPE = None
 try:
@@ -75,26 +89,35 @@ except ImportError:
 
 
 class CSVTranslator:
-    """A class to handle CSV file translation from English to Dutch."""
+    """A class to handle CSV file translation between different languages."""
     
-    def __init__(self, delay_between_requests: float = 0.1):
+    def __init__(self, source_lang: str = 'en', target_lang: str = 'nl', delay_between_requests: float = 0.1):
         """
         Initialize the CSV translator.
         
         Args:
+            source_lang: Source language code (e.g., 'en', 'da')
+            target_lang: Target language code (e.g., 'nl', 'sv')
             delay_between_requests: Delay in seconds between translation requests
                                   to avoid rate limiting
         """
         if TRANSLATOR_TYPE is None:
             raise ImportError("No translation library available. Please install deep-translator or googletrans")
         
+        # Validate language codes
+        if source_lang not in SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported source language: {source_lang}. Supported: {list(SUPPORTED_LANGUAGES.keys())}")
+        if target_lang not in SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported target language: {target_lang}. Supported: {list(SUPPORTED_LANGUAGES.keys())}")
+        
         self.delay = delay_between_requests
-        self.source_lang = 'en'  # English
-        self.target_lang = 'nl'  # Dutch (Netherlands)
+        self.source_lang = source_lang
+        self.target_lang = target_lang
+        
+        logger.info(f"Translator configured: {SUPPORTED_LANGUAGES[source_lang]} → {SUPPORTED_LANGUAGES[target_lang]}")
         
         # Initialize the appropriate translator
-        if TRANSLATOR_TYPE == "deep_translator":
-            self.translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)
+        if TRANSLATOR_TYPE == "deep_translator":            self.translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)
         elif TRANSLATOR_TYPE == "googletrans":
             self.translator = Translator()
         else:
@@ -102,7 +125,7 @@ class CSVTranslator:
         
     def translate_text(self, text: str) -> str:
         """
-        Translate a single text string from English to Dutch.
+        Translate a single text string from source to target language.
         Automatically detects and handles HTML content properly.
         
         Args:
@@ -349,8 +372,7 @@ class CSVTranslator:
                     dest=self.target_lang
                 )
                 translated = result.text
-            else:
-                return text
+            else:                return text
                 
             # Add delay to avoid rate limiting
             time.sleep(self.delay)
@@ -360,11 +382,77 @@ class CSVTranslator:
         except Exception as e:
             logger.warning(f"Plain text translation failed for '{text}': {e}")
             return text
+
+def get_language_preferences() -> Dict[str, str]:
+    """Get source and target language preferences from user."""
+    print("=== Language Configuration ===")
+    
+    # Source language selection
+    print("\nSelect source language (language of your CSV content):")
+    print("  1. English (default)")
+    print("  2. Danish")
+    source_choice = input("Enter choice (1 or 2, default: 1): ").strip()    
+    if source_choice == "2":
+        source_lang = "da"
+        print("Selected: Danish")
+    else:
+        source_lang = "en"
+        print("Selected: English")
+    
+    # Target language selection
+    print(f"\nSelect target language (translate TO):")
+    lang_options = [
+        ('da', 'Danish'),
+        ('nl', 'Dutch (Netherlands)'),
+        ('nl-be', 'Dutch (Flemish)'),
+        ('en', 'English'),
+        ('fr', 'French'),
+        ('de', 'German'),
+        ('it', 'Italian'),
+        ('nb', 'Norwegian (Bokmål)'),
+        ('es', 'Spanish'),
+        ('sv', 'Swedish')
+    ]
+    
+    for i, (code, name) in enumerate(lang_options, 1):
+        print(f"  {i}. {name} ({code})")
+    
+    while True:
+        try:
+            target_choice = input("Enter choice (1-10): ").strip()
+            choice_idx = int(target_choice) - 1
+            if 0 <= choice_idx < len(lang_options):
+                target_lang, target_name = lang_options[choice_idx]
+                print(f"Selected: {target_name}")
+                break
+            else:
+                print("Invalid choice! Please enter a number between 1-10.")
+        except ValueError:
+            print("Invalid input! Please enter a number.")
+    
+    # Validate different languages
+    if source_lang == target_lang:
+        print("⚠️  Warning: Source and target languages are the same!")
+        confirm = input("Do you want to continue anyway? (y/N): ").strip().lower()
+        if confirm != 'y':
+            return {}
+    
+    return {
+        'source_lang': source_lang,
+        'target_lang': target_lang,
+        'source_name': SUPPORTED_LANGUAGES[source_lang],
+        'target_name': SUPPORTED_LANGUAGES[target_lang]
+    }
     
 def get_user_input() -> Dict[str, any]:
     """Get user input for translation parameters."""
-    print("=== CSV Translation Script ===")
-    print("This script translates CSV columns from English to Dutch")
+    # Get language preferences first
+    lang_prefs = get_language_preferences()
+    if not lang_prefs:
+        return {}
+    
+    print(f"\n=== CSV Translation Script ===")
+    print(f"Translation: {lang_prefs['source_name']} → {lang_prefs['target_name']}")
     print(f"Source files should be placed in: {SOURCE_DIR}")
     print(f"Translated files will be saved to: {TARGET_DIR}")
     print()
@@ -434,8 +522,7 @@ def get_user_input() -> Dict[str, any]:
         return {}
     
     columns_to_translate = [col.strip() for col in columns_input.split(',')]
-    
-    # Generate output file path in target directory
+      # Generate output file path in target directory
     output_filename = selected_file.stem + '_translated.csv'
     output_file = str(TARGET_DIR / output_filename)
     print(f"\nOutput will be saved to: {output_file}")
@@ -444,14 +531,18 @@ def get_user_input() -> Dict[str, any]:
         'input_file': input_file,
         'output_file': output_file,
         'columns_to_translate': columns_to_translate,
-        'delimiter': delimiter
+        'delimiter': delimiter,
+        'source_lang': lang_prefs['source_lang'],
+        'target_lang': lang_prefs['target_lang'],
+        'source_name': lang_prefs['source_name'],
+        'target_name': lang_prefs['target_name']
     }
 
 
 def main():
     """Main function to run the CSV translation script."""
-    print("CSV Translation Script - English to Dutch")
-    print("=" * 50)
+    print("CSV Translation Script - Multi-Language Support")
+    print("=" * 55)
     
     # Ensure directories exist
     SOURCE_DIR.mkdir(exist_ok=True)
@@ -462,7 +553,7 @@ def main():
     print()
     
     # Example usage for automated processing (uncomment and modify as needed)
-    # translator = CSVTranslator(delay_between_requests=0.1)
+    # translator = CSVTranslator(source_lang='en', target_lang='nl', delay_between_requests=0.1)
     # success = translator.translate_csv(
     #     input_file=str(SOURCE_DIR / "products.csv"),
     #     output_file=str(TARGET_DIR / "products_translated.csv"),
@@ -475,11 +566,16 @@ def main():
         print("Exiting due to invalid input.")
         return
     
-    # Create translator instance
-    translator = CSVTranslator(delay_between_requests=0.1)
+    # Create translator instance with selected languages
+    translator = CSVTranslator(
+        source_lang=params['source_lang'],
+        target_lang=params['target_lang'],
+        delay_between_requests=0.1
+    )
     
     # Perform translation
     print(f"\nStarting translation...")
+    print(f"Language: {params['source_name']} → {params['target_name']}")
     print(f"Input file: {params['input_file']}")
     print(f"Output file: {params['output_file']}")
     print(f"Columns to translate: {params['columns_to_translate']}")

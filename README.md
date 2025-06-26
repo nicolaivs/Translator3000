@@ -1,10 +1,11 @@
 # CSV Translation Script
 
-A Python script for translating CSV file columns from English to Dutch using the free Google Translate API.
+A Python script for translating CSV file columns between multiple languages using the free Google Translate API.
 
 ## Features
 
-- 🌐 **Free Translation**: Uses Google Translate API through the `deep-translator` library (no API key required)
+- 🌐 **Multi-Language Support**: Translate between 10 supported languages
+- 🔄 **Dynamic Language Selection**: Choose source and target languages at runtime
 - 📊 **CSV Processing**: Reads and processes CSV files with pandas
 - 🔄 **Batch Translation**: Translates multiple columns efficiently
 - 📝 **Preserves Data**: Keeps original columns and adds translated versions
@@ -13,6 +14,19 @@ A Python script for translating CSV file columns from English to Dutch using the
 - ⚡ **Rate Limiting**: Built-in delays to avoid API throttling
 - 🔧 **Delimiter Choice**: Support for both comma (,) and semicolon (;) delimited CSV files
 - 📁 **Organized Workflow**: Automatic source/target folder management
+
+## Supported Languages
+
+- **Danish** (da)
+- **Dutch (Netherlands)** (nl)
+- **Dutch (Flemish)** (nl-be)
+- **English** (en)
+- **French** (fr)
+- **German** (de)
+- **Italian** (it)
+- **Norwegian Bokmål** (nb)
+- **Spanish** (es)
+- **Swedish** (sv)
 
 ## Project Structure
 
@@ -50,8 +64,9 @@ CSV Translator/
    ```bash
    python csv_translator.py
    ```
-3. **Follow the prompts** to select files and columns to translate
-4. **Find your translated files** in the `target/` folder
+3. **Select your languages** (source language of your data, target language for translation)
+4. **Follow the prompts** to select files and columns to translate
+5. **Find your translated files** in the `target/` folder
 
 ### Interactive Mode (Detailed)
 
@@ -61,6 +76,8 @@ CSV Translator/
    ```
 
 2. The script will:
+   - Ask you to choose source language (Danish or English, default: English)
+   - Ask you to choose target language from 9 supported options
    - Automatically show CSV files in the `source/` folder
    - Let you choose which file to translate
    - Show available columns in your CSV
@@ -72,14 +89,40 @@ CSV Translator/
 For automated processing, modify the main function in `csv_translator.py`:
 
 ```python
-# Example: Translate specific columns
-translator = CSVTranslator(delay_between_requests=0.1)
+# Example: Translate English to Dutch
+translator = CSVTranslator(
+    source_lang='en',      # English
+    target_lang='nl',      # Dutch
+    delay_between_requests=0.1
+)
 success = translator.translate_csv(
-    input_file="products.csv",
-    output_file="products_translated.csv",
+    input_file=str(SOURCE_DIR / "products.csv"),
+    output_file=str(TARGET_DIR / "products_translated.csv"),
     columns_to_translate=["name", "description"]
 )
+
+# Example: Translate Danish to Swedish
+translator = CSVTranslator(
+    source_lang='da',      # Danish
+    target_lang='sv',      # Swedish
+    delay_between_requests=0.1
+)
 ```
+
+## Language Codes
+
+| Language | Code |
+|----------|------|
+| Danish | `da` |
+| Dutch (Netherlands) | `nl` |
+| Dutch (Flemish) | `nl-be` |
+| English | `en` |
+| French | `fr` |
+| German | `de` |
+| Italian | `it` |
+| Norwegian (Bokmål) | `nb` |
+| Spanish | `es` |
+| Swedish | `sv` |
 
 ## Example
 

@@ -503,13 +503,22 @@ class CSVTranslator:
         
         # Restore CDATA sections for HTML content
         xml_str = self._restore_cdata_for_html_content(xml_str)
-        
-        # Parse with minidom for pretty printing
+          # Parse with minidom for pretty printing
         try:
             dom = minidom.parseString(xml_str)
+            # Get pretty formatted XML with 4-space indentation to match original
+            pretty_xml = dom.toprettyxml(indent="    ")
+            
+            # Clean up extra blank lines that minidom adds
+            lines = []
+            for line in pretty_xml.split('\n'):
+                line = line.rstrip()  # Remove trailing whitespace
+                if line.strip():  # Only keep non-empty lines
+                    lines.append(line)
+            
             # Save with pretty formatting
             with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(dom.toprettyxml(indent="  "))
+                f.write('\n'.join(lines) + '\n')
         except Exception as e:
             logger.warning(f"Error pretty-printing XML: {e}. Writing raw XML.")
             with open(output_file, 'w', encoding='utf-8') as f:

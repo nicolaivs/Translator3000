@@ -551,9 +551,27 @@ class CSVTranslator:
             logger.warning(f"Plain text translation failed for '{text}': {e}")
             return text
 
-    def translate_xml(self, input_file: str, output_file: str) -> bool:
+    def translate_xml(self, input_file: str, output_file: str, use_multithreading: bool = True, max_workers: int = 4) -> bool:
         """
         Translate text content in XML file while preserving structure and attributes.
+        
+        Args:
+            input_file: Path to input XML file
+            output_file: Path to output XML file
+            use_multithreading: Whether to use multithreading (default: True)
+            max_workers: Number of worker threads for multithreading (default: 4)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if use_multithreading:
+            return self.translate_xml_multithreaded(input_file, output_file, max_workers)
+        else:
+            return self.translate_xml_sequential(input_file, output_file)
+
+    def translate_xml_sequential(self, input_file: str, output_file: str) -> bool:
+        """
+        Translate text content in XML file sequentially (original method).
         
         Args:
             input_file: Path to input XML file
@@ -569,19 +587,33 @@ class CSVTranslator:
             tree = ET.parse(input_file)
             root = tree.getroot()
             
-            # Count total text elements for progress tracking
-            total_elements = self._count_text_elements(root)
+            # Collect all text elements that need translation
+            text_elements = []
+            self._collect_text_elements(root, text_elements)
+            
+            total_elements = len(text_elements)
             logger.info(f"Found {total_elements} text elements to translate")
             
-            # Translate all text content recursively
-            translated_count = self._translate_xml_element(root, 0, total_elements)
+            if total_elements == 0:
+                # No text to translate, just copy the file
+                logger.info("No text elements found, copying file as-is")
+                tree.write(output_file, encoding='utf-8', xml_declaration=True)
+                return True
+            
+            # Use sequential translation
+            logger.info("Using single-threaded XML translation")
+            success = self._translate_xml_elements_sequential(text_elements)
+            
+            if not success:
+                logger.error("XML translation failed")
+                return False
             
             # Save the translated XML
             logger.info(f"Saving translated XML to: {output_file}")
             self._save_xml_pretty(tree, output_file)
             
             logger.info(f"XML translation completed successfully!")
-            logger.info(f"Translated {translated_count} text elements")
+            logger.info(f"Translated {total_elements} text elements")
             
             return True
             
@@ -595,65 +627,204 @@ class CSVTranslator:
             logger.error(f"Error during XML translation: {e}")
             return False
     
-    def _count_text_elements(self, element) -> int:
-        """Count elements with text content for progress tracking."""
-        count = 0
-        if element.text and element.text.strip():
-            count += 1
-        if element.tail and element.tail.strip():
-            count += 1
-        for child in element:
-            count += self._count_text_elements(child)
-        return count
-    
-    def _translate_xml_element(self, element, current_count: int, total_count: int) -> int:
+    def translate_xml_multithreaded(self, input_file: str, output_file: str, max_workers: int = 4) -> bool:
         """
-        Recursively translate text content in XML elements.
+        Translate text content in XML file using multithreading for better performance.
         
         Args:
-            element: XML element to process
-            current_count: Current progress count
-            total_count: Total elements to process
+            input_file: Path to input XML file
+            output_file: Path to output XML file
+            max_workers: Number of worker threads (default: 4)
             
         Returns:
-            Updated count of processed elements
+            True if successful, False otherwise
         """
-        processed_count = current_count
-        
-        # Translate element text content
+        try:
+            logger.info(f"Reading XML file: {input_file}")
+            
+            # Parse the XML file
+            tree = ET.parse(input_file)
+            root = tree.getroot()
+            
+            # Collect all text elements that need translation
+            text_elements = []
+            self._collect_text_elements(root, text_elements)
+            
+            total_elements = len(text_elements)
+            logger.info(f"Found {total_elements} text elements to translate")
+            
+            if total_elements == 0:
+                # No text to translate, just copy the file
+                logger.info("No text elements found, copying file as-is")
+                tree.write(output_file, encoding='utf-8', xml_declaration=True)
+                return True
+            
+            # Use multithreading if we have enough elements
+            if total_elements > 2 and max_workers > 1:
+                logger.info(f"Using multithreaded XML translation with {max_workers} workers")
+                success = self._translate_xml_elements_multithreaded(text_elements, max_workers)
+            else:
+                logger.info("Using single-threaded XML translation")
+                success = self._translate_xml_elements_sequential(text_elements)
+            
+            if not success:
+                logger.error("XML translation failed")
+                return False
+            
+            # Save the translated XML
+            logger.info(f"Saving translated XML to: {output_file}")
+            self._save_xml_pretty(tree, output_file)
+            
+            logger.info(f"XML translation completed successfully!")
+            logger.info(f"Translated {total_elements} text elements")
+            
+            return True
+            
+        except ET.ParseError as e:
+            logger.error(f"XML parsing error: {e}")
+            return False
+        except FileNotFoundError:
+            logger.error(f"Input file not found: {input_file}")
+            return False
+        except Exception as e:
+            logger.error(f"Error during XML translation: {e}")
+            return False
+
+    def _collect_text_elements(self, element, text_elements: List):
+        """Collect all text elements that need translation."""
+        # Collect element text
         if element.text and element.text.strip():
-            processed_count += 1
-            if processed_count % 10 == 0:  # Progress update every 10 elements
-                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
-            
-            original_text = element.text.strip()
-            translated_text = self.translate_text(original_text)
-            
-            # Preserve whitespace structure
-            if element.text.startswith(' ') or element.text.startswith('\n'):
-                element.text = element.text.replace(original_text, translated_text)
-            else:
-                element.text = translated_text
+            text_elements.append({
+                'element': element,
+                'type': 'text',
+                'original': element.text.strip(),
+                'full_text': element.text
+            })
         
-        # Translate tail text (text after closing tag)
+        # Collect tail text
         if element.tail and element.tail.strip():
-            processed_count += 1
-            if processed_count % 10 == 0:
-                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
-            
-            original_tail = element.tail.strip()
-            translated_tail = self.translate_text(original_tail)
-            
-            # Preserve whitespace structure
-            if element.tail.startswith(' ') or element.tail.startswith('\n'):
-                element.tail = element.tail.replace(original_tail, translated_tail)
-            else:
-                element.tail = translated_tail
-          # Recursively process child elements
-        for child in element:
-            processed_count = self._translate_xml_element(child, processed_count, total_count)
+            text_elements.append({
+                'element': element,
+                'type': 'tail',
+                'original': element.tail.strip(),
+                'full_text': element.tail
+            })
         
-        return processed_count
+        # Process children recursively
+        for child in element:
+            self._collect_text_elements(child, text_elements)
+
+    def _translate_xml_elements_multithreaded(self, text_elements: List, max_workers: int) -> bool:
+        """Translate XML text elements using multithreading."""
+        try:
+            # Thread-safe progress tracking
+            progress_lock = threading.Lock()
+            progress_counter = [0]
+            total_elements = len(text_elements)
+            
+            def translate_element_text(text_data):
+                """Translate a single text element."""
+                try:
+                    original_text = text_data['original']
+                    translated = self.translate_text(original_text)
+                    
+                    # Update progress in thread-safe manner
+                    with progress_lock:
+                        progress_counter[0] += 1
+                        if progress_counter[0] % 10 == 0 or progress_counter[0] == total_elements:
+                            logger.info(f"Progress: {progress_counter[0]}/{total_elements} elements processed")
+                    
+                    return {
+                        'text_data': text_data,
+                        'translated': translated
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to translate XML text '{original_text[:50]}...': {e}")
+                    return {
+                        'text_data': text_data,
+                        'translated': original_text  # Fallback to original
+                    }
+            
+            # Use ThreadPoolExecutor for concurrent translation
+            results = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all translation tasks
+                future_to_element = {
+                    executor.submit(translate_element_text, text_data): text_data 
+                    for text_data in text_elements
+                }
+                
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(future_to_element):
+                    try:
+                        result = future.result()
+                        results.append(result)
+                    except Exception as e:
+                        # Handle individual translation failures
+                        text_data = future_to_element[future]
+                        logger.warning(f"Translation failed for XML element: {e}")
+                        results.append({
+                            'text_data': text_data,
+                            'translated': text_data['original']  # Fallback to original
+                        })
+            
+            # Apply the translated results back to the XML elements
+            for result in results:
+                text_data = result['text_data']
+                translated = result['translated']
+                element = text_data['element']
+                
+                if text_data['type'] == 'text':
+                    # Replace element text while preserving whitespace structure
+                    if element.text.startswith(' ') or element.text.startswith('\n'):
+                        element.text = element.text.replace(text_data['original'], translated)
+                    else:
+                        element.text = translated
+                elif text_data['type'] == 'tail':
+                    # Replace tail text while preserving whitespace structure
+                    if element.tail.startswith(' ') or element.tail.startswith('\n'):
+                        element.tail = element.tail.replace(text_data['original'], translated)
+                    else:
+                        element.tail = translated
+            
+            logger.info(f"Completed multithreaded XML translation")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Multithreaded XML translation failed: {e}")
+            return False
+
+    def _translate_xml_elements_sequential(self, text_elements: List) -> bool:
+        """Translate XML text elements sequentially (fallback method)."""
+        try:
+            total_elements = len(text_elements)
+            
+            for idx, text_data in enumerate(text_elements):
+                if (idx + 1) % 10 == 0 or (idx + 1) == total_elements:
+                    logger.info(f"Progress: {idx + 1}/{total_elements} elements processed")
+                
+                original_text = text_data['original']
+                translated = self.translate_text(original_text)
+                element = text_data['element']
+                
+                if text_data['type'] == 'text':
+                    # Replace element text while preserving whitespace structure
+                    if element.text.startswith(' ') or element.text.startswith('\n'):
+                        element.text = element.text.replace(original_text, translated)
+                    else:
+                        element.text = translated
+                elif text_data['type'] == 'tail':
+                    # Replace tail text while preserving whitespace structure
+                    if element.tail.startswith(' ') or element.tail.startswith('\n'):
+                        element.tail = element.tail.replace(original_text, translated)
+                    else:
+                        element.tail = translated
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Sequential XML translation failed: {e}")
+            return False
     
     def _save_xml_pretty(self, tree, output_file: str):
         """Save XML with pretty formatting and CDATA preservation for HTML content."""

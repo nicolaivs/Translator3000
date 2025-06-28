@@ -1,6 +1,6 @@
-# CSV & XML Translation Script
+# Translator3000 - Multi-Language CSV & XML Translation Script
 
-A Python script for translating CSV file columns and XML text content between multiple languages using the free Google Translate API.
+A powerful Python script for translating CSV file columns and XML text content between multiple languages using the free Google Translate API. Supports both single-file and batch processing modes.
 
 ## Features
 
@@ -8,12 +8,14 @@ A Python script for translating CSV file columns and XML text content between mu
 - 🔄 **Dynamic Language Selection**: Choose source and target languages at runtime
 - 📊 **CSV Processing**: Reads and processes CSV files with pandas
 - 🏷️ **XML Processing**: Translates XML text content while preserving structure and attributes
+- 🚀 **Batch Processing**: Process entire folders with multiple files automatically
+- 📁 **Recursive Folder Support**: Scans subdirectories and creates matching target structure
 - 🔄 **Batch Translation**: Translates multiple columns efficiently
 - 📝 **Preserves Data**: Keeps original columns/structure and adds translated versions
 - 🛡️ **Error Handling**: Graceful handling of translation failures
 - 📊 **Progress Tracking**: Real-time progress updates and logging
 - ⚡ **Rate Limiting**: Built-in delays to avoid API throttling
-- 🔧 **Delimiter Choice**: Support for both comma (,) and semicolon (;) delimited CSV files
+- 🔧 **Auto-Detection**: Automatically detects CSV delimiters and text columns
 - 📁 **Organized Workflow**: Automatic source/target folder management
 
 ## Supported Languages
@@ -32,10 +34,19 @@ A Python script for translating CSV file columns and XML text content between mu
 ## Project Structure
 
 ```
-CSV & XML Translator/
-├── source/           # Place your CSV/XML files here for translation
-├── target/           # Translated files are saved here
-├── csv_translator.py # Main translation script
+Translator3000/
+├── source/           # Place your CSV/XML files and folders here
+│   ├── folder1/      # Subdirectories are supported
+│   │   ├── data1.csv
+│   │   └── content1.xml
+│   ├── data.csv      # Files in root are also processed
+│   └── README.md
+├── target/           # Translated files are saved here (mirrors source structure)
+│   ├── folder1/      # Matching subdirectories created automatically
+│   │   ├── data1_translated.csv
+│   │   └── content1_translated.xml
+│   └── data_translated.csv
+├── translator3000.py # Main translation script
 ├── requirements.txt  # Python dependencies
 └── README.md        # This file
 ```
@@ -60,20 +71,23 @@ CSV & XML Translator/
 
 ### Quick Start
 
-1. **Place your CSV/XML files** in the `source/` folder
+1. **Place your CSV/XML files** in the `source/` folder (subdirectories are supported!)
 2. **Run the script**:
    ```bash
-   python csv_translator.py
+   python translator3000.py
    ```
 3. **Select your languages** (source language of your data, target language for translation)
-4. **Follow the prompts** to select files and columns to translate (by number for CSV, automatic for XML)
-5. **Find your translated files** in the `target/` folder
+4. **Choose processing mode**:
+   - **Single file mode**: Select one specific file to translate
+   - **Batch mode**: Process all discovered files automatically
+5. **Follow the prompts** to select columns for CSV files (automatic detection in batch mode)
+6. **Find your translated files** in the `target/` folder with matching directory structure
 
 ### Interactive Mode (Detailed)
 
 1. Run the script:
    ```bash
-   python csv_translator.py
+   python translator3000.py
    ```
 
 2. The script will:
@@ -87,7 +101,7 @@ CSV & XML Translator/
 
 ### Programmatic Usage
 
-For automated processing, modify the main function in `csv_translator.py`:
+For automated processing, modify the main function in `translator3000.py`:
 
 ```python
 # Example: Translate English to Dutch
@@ -181,7 +195,7 @@ For production use or high-volume translation, consider:
 
 ```
 Translation/
-├── csv_translator.py          # Main translation script
+├── translator3000.py          # Main translation script
 ├── requirements.txt           # Python dependencies
 ├── sample_products.csv        # Example CSV file
 ├── README.md                  # This file

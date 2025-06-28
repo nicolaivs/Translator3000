@@ -2,11 +2,11 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Run CSV Translator",
+			"label": "Run Translator3000",
 			"type": "shell",
 			"command": "python",
 			"args": [
-				"csv_translator.py"
+				"translator3000.py"
 			],
 			"group": "build",
 			"isBackground": false,

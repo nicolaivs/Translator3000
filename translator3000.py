@@ -194,9 +194,8 @@ class CSVTranslator:
         if column_name not in df.columns:
             logger.error(f"Column '{column_name}' not found in DataFrame")
             return pd.Series()
-        
-        # Choose between multithreaded and single-threaded approach
-        if use_multithreading and len(df) > 5:  # Only use multithreading for larger datasets
+          # Choose between multithreaded and single-threaded approach
+        if use_multithreading and len(df) > 2:  # Use multithreading for 3+ rows (lower threshold)
             return self.translate_column_multithreaded(df, column_name, max_workers)
         else:
             return self._translate_column_single_threaded(df, column_name)

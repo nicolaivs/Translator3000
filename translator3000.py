@@ -490,24 +490,64 @@ class CSVTranslator:
                 element.tail = element.tail.replace(original_tail, translated_tail)
             else:
                 element.tail = translated_tail
-        
-        # Recursively process child elements
+          # Recursively process child elements
         for child in element:
             processed_count = self._translate_xml_element(child, processed_count, total_count)
         
         return processed_count
     
     def _save_xml_pretty(self, tree, output_file: str):
-        """Save XML with pretty formatting."""
+        """Save XML with pretty formatting and CDATA preservation for HTML content."""
         # Convert to string
         xml_str = ET.tostring(tree.getroot(), encoding='unicode')
         
-        # Parse with minidom for pretty printing
-        dom = minidom.parseString(xml_str)
+        # Restore CDATA sections for HTML content
+        xml_str = self._restore_cdata_for_html_content(xml_str)
         
-        # Save with pretty formatting
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(dom.toprettyxml(indent="  "))
+        # Parse with minidom for pretty printing
+        try:
+            dom = minidom.parseString(xml_str)
+            # Save with pretty formatting
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(dom.toprettyxml(indent="  "))
+        except Exception as e:
+            logger.warning(f"Error pretty-printing XML: {e}. Writing raw XML.")
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+                f.write(xml_str)
+    
+    def _restore_cdata_for_html_content(self, xml_str: str) -> str:
+        """Restore CDATA sections for content that contains HTML tags."""
+        import re
+        
+        # Look for content that has HTML entities (indicating original HTML/CDATA content)
+        # Pattern to match element content that contains HTML entities
+        pattern = r'(<([^>]+)>)([^<]*(?:&(?:lt|gt|amp|quot|apos);[^<]*)+)</\2>'
+        
+        def replace_with_cdata(match):
+            opening_tag = match.group(1)
+            tag_name = match.group(2)
+            content = match.group(3)
+            closing_tag = f'</{tag_name}>'
+            
+            # Unescape HTML entities
+            unescaped_content = (content
+                                .replace('&lt;', '<')
+                                .replace('&gt;', '>')
+                                .replace('&amp;', '&')
+                                .replace('&quot;', '"')
+                                .replace('&apos;', "'"))
+            
+            # If the unescaped content contains HTML tags, wrap in CDATA
+            if '<' in unescaped_content and '>' in unescaped_content:
+                return f'{opening_tag}<![CDATA[{unescaped_content}]]>{closing_tag}'
+            
+            return match.group(0)
+        
+        # Apply the replacement
+        result = re.sub(pattern, replace_with_cdata, xml_str, flags=re.DOTALL)
+        
+        return result
 
 def get_language_suffix(lang_code: str) -> str:
     """Generate a column suffix based on language code."""

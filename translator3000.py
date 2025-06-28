@@ -33,6 +33,9 @@ import logging
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
+import concurrent.futures
+import threading
+from collections import deque
 
 # Configure logging with UTF-8 encoding
 logging.basicConfig(
@@ -174,14 +177,16 @@ class CSVTranslator:
         except Exception as e:
             logger.warning(f"Translation failed for '{text}': {e}")
             return text  # Return original text if translation fails
-    
-    def translate_column(self, df: pd.DataFrame, column_name: str) -> pd.Series:
+
+    def translate_column(self, df: pd.DataFrame, column_name: str, use_multithreading: bool = True, max_workers: int = 4) -> pd.Series:
         """
         Translate an entire column of the DataFrame.
         
         Args:
             df: DataFrame containing the data
             column_name: Name of the column to translate
+            use_multithreading: Whether to use multithreading (default: True)
+            max_workers: Number of worker threads for multithreading (default: 4)
             
         Returns:
             Series with translated values
@@ -189,8 +194,25 @@ class CSVTranslator:
         if column_name not in df.columns:
             logger.error(f"Column '{column_name}' not found in DataFrame")
             return pd.Series()
+        
+        # Choose between multithreaded and single-threaded approach
+        if use_multithreading and len(df) > 5:  # Only use multithreading for larger datasets
+            return self.translate_column_multithreaded(df, column_name, max_workers)
+        else:
+            return self._translate_column_single_threaded(df, column_name)
+    
+    def _translate_column_single_threaded(self, df: pd.DataFrame, column_name: str) -> pd.Series:
+        """
+        Single-threaded translation method (original implementation).
+        
+        Args:
+            df: DataFrame containing the data
+            column_name: Name of the column to translate
             
-        logger.info(f"Translating column: {column_name}")
+        Returns:
+            Series with translated values
+        """            
+        logger.info(f"Translating column: {column_name} (single-threaded)")
         
         translated_values = []
         total_rows = len(df[column_name])
@@ -205,6 +227,77 @@ class CSVTranslator:
         logger.info(f"Completed translation of column: {column_name}")
         return pd.Series(translated_values, index=df.index)
     
+    def translate_column_multithreaded(self, df: pd.DataFrame, column_name: str, max_workers: int = 4) -> pd.Series:
+        """
+        Translate an entire column using multithreading for improved performance.
+        
+        Args:
+            df: DataFrame containing the data
+            column_name: Name of the column to translate
+            max_workers: Number of worker threads (default: 4)
+            
+        Returns:
+            Series with translated values
+        """
+        if column_name not in df.columns:
+            logger.error(f"Column '{column_name}' not found in DataFrame")
+            return pd.Series()
+        
+        logger.info(f"Translating column: {column_name} (using {max_workers} threads)")
+        
+        # Prepare data for multithreading
+        values_to_translate = [(idx, value) for idx, value in enumerate(df[column_name])]
+        total_rows = len(values_to_translate)
+        
+        # Thread-safe progress tracking
+        progress_lock = threading.Lock()
+        progress_counter = [0]  # Use list for mutable reference
+        
+        def translate_with_progress(idx_value_pair):
+            """Translate a single value with thread-safe progress tracking."""
+            idx, value = idx_value_pair
+            translated = self.translate_text(value)
+            
+            # Update progress in thread-safe manner
+            with progress_lock:
+                progress_counter[0] += 1
+                if progress_counter[0] % 10 == 0:
+                    logger.info(f"Progress: {progress_counter[0]}/{total_rows} rows processed")
+            
+            return idx, translated
+        
+        # Use ThreadPoolExecutor for concurrent translation
+        results = [None] * total_rows  # Pre-allocate results array
+        
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all translation tasks
+                future_to_idx = {
+                    executor.submit(translate_with_progress, (idx, value)): idx 
+                    for idx, value in values_to_translate
+                }
+                
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(future_to_idx):
+                    try:
+                        idx, translated_value = future.result()
+                        results[idx] = translated_value
+                    except Exception as e:
+                        # Handle individual translation failures
+                        original_idx = future_to_idx[future]
+                        original_value = values_to_translate[original_idx][1]
+                        logger.warning(f"Translation failed for row {original_idx}: {e}")
+                        results[original_idx] = original_value  # Fallback to original
+        
+        except Exception as e:
+            logger.error(f"Multithreaded translation failed: {e}")
+            # Fallback to single-threaded approach
+            logger.info("Falling back to single-threaded translation...")
+            return self.translate_column(df, column_name)
+        
+        logger.info(f"Completed multithreaded translation of column: {column_name}")
+        return pd.Series(results, index=df.index)
+
     def translate_csv(self, 
                      input_file: str, 
                      output_file: str, 
@@ -733,1122 +826,6 @@ class CSVTranslator:
             # Mixed case - return replacement as-is
             return replacement
 
-    def _translate_with_retry(self, text: str, max_retries: int = 3, base_delay: float = 0.05) -> str:
-        """
-        Translate text with exponential backoff retry mechanism.
-        
-        Args:
-            text: Text to translate
-            max_retries: Maximum number of retry attempts
-            base_delay: Base delay in seconds (will increase with each retry)
-            
-        Returns:
-            Translated text
-        """
-        if not text or len(text.strip()) <= 1:
-            return text
-            
-        text_clean = text.strip()
-        last_exception = None
-        
-        for attempt in range(max_retries + 1):  # +1 for initial attempt
-            try:
-                # Translate using the appropriate library
-                if TRANSLATOR_TYPE == "deep_translator":
-                    translated = self.translator.translate(text_clean)
-                elif TRANSLATOR_TYPE == "googletrans":
-                    result = self.translator.translate(
-                        text_clean, 
-                        src=self.source_lang, 
-                        dest=self.target_lang
-                    )
-                    translated = result.text
-                else:
-                    return text
-                
-                # Success! Add minimal delay and return
-                if attempt == 0:
-                    # First attempt - use minimal delay
-                    time.sleep(base_delay)
-                else:
-                    # Retry succeeded - use slightly longer delay to be respectful
-                    time.sleep(base_delay * 2)
-                    logger.debug(f"Translation succeeded on attempt {attempt + 1}")
-                
-                return translated
-                
-            except Exception as e:
-                last_exception = e
-                
-                if attempt < max_retries:
-                    # Calculate exponential backoff delay
-                    retry_delay = base_delay * (2 ** attempt) + (0.05 * attempt)  # 50ms extra per retry
-                    logger.debug(f"Translation attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
-                    time.sleep(retry_delay)
-                else:
-                    # All retries exhausted
-                    logger.warning(f"Translation failed after {max_retries + 1} attempts for '{text[:50]}...': {last_exception}")
-        
-        # If we get here, all attempts failed
-        return text
-
-    def _translate_plain_text(self, text: str) -> str:
-        """
-        Translate plain text without HTML.
-        
-        Args:
-            text: Plain text to translate
-            
-        Returns:
-            Translated text
-        """
-        if not text or len(text.strip()) <= 1:
-            return text
-            
-        try:
-            text_clean = text.strip()
-              # Translate using the appropriate library
-            if TRANSLATOR_TYPE == "deep_translator":
-                # deep_translator: translator was initialized with languages, so only pass text
-                translated = self.translator.translate(text_clean)
-            elif TRANSLATOR_TYPE == "googletrans":
-                # googletrans: generic translator, so pass text and language parameters
-                result = self.translator.translate(
-                    text_clean, 
-                    src=self.source_lang, 
-                    dest=self.target_lang
-                )
-                translated = result.text
-            else:
-                return text
-                
-            # Add delay to avoid rate limiting
-            time.sleep(self.delay)
-            
-            return translated
-            
-        except Exception as e:
-            logger.warning(f"Plain text translation failed for '{text}': {e}")
-            return text
-
-    def translate_xml(self, input_file: str, output_file: str) -> bool:
-        """
-        Translate text content in XML file while preserving structure and attributes.
-        
-        Args:
-            input_file: Path to input XML file
-            output_file: Path to output XML file
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            logger.info(f"Reading XML file: {input_file}")
-            
-            # Parse the XML file
-            tree = ET.parse(input_file)
-            root = tree.getroot()
-            
-            # Count total text elements for progress tracking
-            total_elements = self._count_text_elements(root)
-            logger.info(f"Found {total_elements} text elements to translate")
-            
-            # Translate all text content recursively
-            translated_count = self._translate_xml_element(root, 0, total_elements)
-            
-            # Save the translated XML
-            logger.info(f"Saving translated XML to: {output_file}")
-            self._save_xml_pretty(tree, output_file)
-            
-            logger.info(f"XML translation completed successfully!")
-            logger.info(f"Translated {translated_count} text elements")
-            
-            return True
-            
-        except ET.ParseError as e:
-            logger.error(f"XML parsing error: {e}")
-            return False
-        except FileNotFoundError:
-            logger.error(f"Input file not found: {input_file}")
-            return False
-        except Exception as e:
-            logger.error(f"Error during XML translation: {e}")
-            return False
-    
-    def _count_text_elements(self, element) -> int:
-        """Count elements with text content for progress tracking."""
-        count = 0
-        if element.text and element.text.strip():
-            count += 1
-        if element.tail and element.tail.strip():
-            count += 1
-        for child in element:
-            count += self._count_text_elements(child)
-        return count
-    
-    def _translate_xml_element(self, element, current_count: int, total_count: int) -> int:
-        """
-        Recursively translate text content in XML elements.
-        
-        Args:
-            element: XML element to process
-            current_count: Current progress count
-            total_count: Total elements to process
-            
-        Returns:
-            Updated count of processed elements
-        """
-        processed_count = current_count
-        
-        # Translate element text content
-        if element.text and element.text.strip():
-            processed_count += 1
-            if processed_count % 10 == 0:  # Progress update every 10 elements
-                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
-            
-            original_text = element.text.strip()
-            translated_text = self.translate_text(original_text)
-            
-            # Preserve whitespace structure
-            if element.text.startswith(' ') or element.text.startswith('\n'):
-                element.text = element.text.replace(original_text, translated_text)
-            else:
-                element.text = translated_text
-        
-        # Translate tail text (text after closing tag)
-        if element.tail and element.tail.strip():
-            processed_count += 1
-            if processed_count % 10 == 0:
-                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
-            
-            original_tail = element.tail.strip()
-            translated_tail = self.translate_text(original_tail)
-            
-            # Preserve whitespace structure
-            if element.tail.startswith(' ') or element.tail.startswith('\n'):
-                element.tail = element.tail.replace(original_tail, translated_tail)
-            else:
-                element.tail = translated_tail
-          # Recursively process child elements
-        for child in element:
-            processed_count = self._translate_xml_element(child, processed_count, total_count)
-        
-        return processed_count
-    
-    def _save_xml_pretty(self, tree, output_file: str):
-        """Save XML with pretty formatting and CDATA preservation for HTML content."""
-        # Convert to string
-        xml_str = ET.tostring(tree.getroot(), encoding='unicode')
-        
-        # Restore CDATA sections for HTML content
-        xml_str = self._restore_cdata_for_html_content(xml_str)
-          # Parse with minidom for pretty printing
-        try:
-            dom = minidom.parseString(xml_str)
-            # Get pretty formatted XML with 4-space indentation to match original
-            pretty_xml = dom.toprettyxml(indent="    ")
-            
-            # Clean up extra blank lines that minidom adds
-            lines = []
-            for line in pretty_xml.split('\n'):
-                line = line.rstrip()  # Remove trailing whitespace
-                if line.strip():  # Only keep non-empty lines
-                    lines.append(line)
-            
-            # Save with pretty formatting
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines) + '\n')
-        except Exception as e:
-            logger.warning(f"Error pretty-printing XML: {e}. Writing raw XML.")
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
-                f.write(xml_str)
-    
-    def _restore_cdata_for_html_content(self, xml_str: str) -> str:
-        """Restore CDATA sections for content that contains HTML tags."""
-        import re
-        
-        # Look for content that has HTML entities (indicating original HTML/CDATA content)
-        # Pattern to match element content that contains HTML entities
-        pattern = r'(<([^>]+)>)([^<]*(?:&(?:lt|gt|amp|quot|apos);[^<]*)+)</\2>'
-        
-        def replace_with_cdata(match):
-            opening_tag = match.group(1)
-            tag_name = match.group(2)
-            content = match.group(3)
-            closing_tag = f'</{tag_name}>'
-            
-            # Unescape HTML entities
-            unescaped_content = (content
-                                .replace('&lt;', '<')
-                                .replace('&gt;', '>')
-                                .replace('&amp;', '&')
-                                .replace('&quot;', '"')
-                                .replace('&apos;', "'"))
-            
-            # If the unescaped content contains HTML tags, wrap in CDATA
-            if '<' in unescaped_content and '>' in unescaped_content:
-                return f'{opening_tag}<![CDATA[{unescaped_content}]]>{closing_tag}'
-            
-            return match.group(0)
-        
-        # Apply the replacement
-        result = re.sub(pattern, replace_with_cdata, xml_str, flags=re.DOTALL)
-        
-        return result
-
-    def _load_glossary(self) -> Dict[str, Dict[str, str]]:
-        """
-        Load the glossary CSV file for custom translation terms.
-        
-        Returns:
-            Dictionary mapping source terms to target terms and case preferences
-        """
-        glossary = {}
-        glossary_file = PROJECT_ROOT / "glossary.csv"
-        
-        if not glossary_file.exists():
-            logger.info("No glossary.csv file found. Using translation API only.")
-            return glossary
-        
-        try:
-            # Read the glossary CSV
-            with open(glossary_file, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            # Skip header and empty lines
-            for line_num, line in enumerate(lines[1:], 2):
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                
-                parts = line.split(';')
-                if len(parts) != 3:
-                    logger.warning(f"Glossary line {line_num} has wrong format (expected 3 columns): {line}")
-                    continue
-                
-                source_term, target_term, keep_case = parts
-                source_term = source_term.strip()
-                target_term = target_term.strip()
-                keep_case = keep_case.strip().lower() == 'true'
-                
-                if source_term and target_term:
-                    glossary[source_term.lower()] = {
-                        'target': target_term,
-                        'keep_case': keep_case
-                    }
-            
-            if glossary:
-                logger.info(f"Loaded {len(glossary)} terms from glossary.csv")
-            else:
-                logger.info("Glossary.csv file is empty or contains no valid entries")
-                
-        except Exception as e:
-            logger.warning(f"Error loading glossary.csv: {e}")
-        
-        return glossary
-    
-    def _apply_glossary_replacements(self, text: str) -> str:
-        """
-        Apply glossary replacements to text before translation.
-        
-        Args:
-            text: Text to process
-            
-        Returns:
-            Text with glossary terms replaced
-        """
-        if not hasattr(self, 'glossary') or not self.glossary:
-            return text
-        
-        result = text
-        
-        for source_term, config in self.glossary.items():
-            target_term = config['target']
-            keep_case = config['keep_case']
-            
-            # Create case-insensitive pattern for whole words
-            pattern = re.compile(r'\b' + re.escape(source_term) + r'\b', re.IGNORECASE)
-            
-            def replace_match(match):
-                matched_text = match.group(0)
-                
-                if keep_case:
-                    # Preserve the case pattern of the original match
-                    return self._preserve_case(matched_text, target_term)
-                else:
-                    # Use target term as-is
-                    return target_term
-            
-            result = pattern.sub(replace_match, result)
-        
-        return result
-    
-    def _preserve_case(self, original: str, replacement: str) -> str:
-        """
-        Preserve the case pattern of the original word when applying replacement.
-        
-        Args:
-            original: Original word with case pattern to preserve
-            replacement: Replacement word
-            
-        Returns:
-            Replacement word with case pattern of original
-        """
-        if original.isupper():
-            return replacement.upper()
-        elif original.islower():
-            return replacement.lower()
-        elif original.istitle():
-            return replacement.capitalize()
-        else:
-            # Mixed case - return replacement as-is
-            return replacement
-
-    def _translate_with_retry(self, text: str, max_retries: int = 3, base_delay: float = 0.05) -> str:
-        """
-        Translate text with exponential backoff retry mechanism.
-        
-        Args:
-            text: Text to translate
-            max_retries: Maximum number of retry attempts
-            base_delay: Base delay in seconds (will increase with each retry)
-            
-        Returns:
-            Translated text
-        """
-        if not text or len(text.strip()) <= 1:
-            return text
-            
-        text_clean = text.strip()
-        last_exception = None
-        
-        for attempt in range(max_retries + 1):  # +1 for initial attempt
-            try:
-                # Translate using the appropriate library
-                if TRANSLATOR_TYPE == "deep_translator":
-                    translated = self.translator.translate(text_clean)
-                elif TRANSLATOR_TYPE == "googletrans":
-                    result = self.translator.translate(
-                        text_clean, 
-                        src=self.source_lang, 
-                        dest=self.target_lang
-                    )
-                    translated = result.text
-                else:
-                    return text
-                
-                # Success! Add minimal delay and return
-                if attempt == 0:
-                    # First attempt - use minimal delay
-                    time.sleep(base_delay)
-                else:
-                    # Retry succeeded - use slightly longer delay to be respectful
-                    time.sleep(base_delay * 2)
-                    logger.debug(f"Translation succeeded on attempt {attempt + 1}")
-                
-                return translated
-                
-            except Exception as e:
-                last_exception = e
-                
-                if attempt < max_retries:
-                    # Calculate exponential backoff delay
-                    retry_delay = base_delay * (2 ** attempt) + (0.05 * attempt)  # 50ms extra per retry
-                    logger.debug(f"Translation attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
-                    time.sleep(retry_delay)
-                else:
-                    # All retries exhausted
-                    logger.warning(f"Translation failed after {max_retries + 1} attempts for '{text[:50]}...': {last_exception}")
-        
-        # If we get here, all attempts failed
-        return text
-
-    def _translate_plain_text(self, text: str) -> str:
-        """
-        Translate plain text without HTML.
-        
-        Args:
-            text: Plain text to translate
-            
-        Returns:
-            Translated text
-        """
-        if not text or len(text.strip()) <= 1:
-            return text
-            
-        try:
-            text_clean = text.strip()
-              # Translate using the appropriate library
-            if TRANSLATOR_TYPE == "deep_translator":
-                # deep_translator: translator was initialized with languages, so only pass text
-                translated = self.translator.translate(text_clean)
-            elif TRANSLATOR_TYPE == "googletrans":
-                # googletrans: generic translator, so pass text and language parameters
-                result = self.translator.translate(
-                    text_clean, 
-                    src=self.source_lang, 
-                    dest=self.target_lang
-                )
-                translated = result.text
-            else:
-                return text
-                
-            # Add delay to avoid rate limiting
-            time.sleep(self.delay)
-            
-            return translated
-            
-        except Exception as e:
-            logger.warning(f"Plain text translation failed for '{text}': {e}")
-            return text
-
-    def translate_xml(self, input_file: str, output_file: str) -> bool:
-        """
-        Translate text content in XML file while preserving structure and attributes.
-        
-        Args:
-            input_file: Path to input XML file
-            output_file: Path to output XML file
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            logger.info(f"Reading XML file: {input_file}")
-            
-            # Parse the XML file
-            tree = ET.parse(input_file)
-            root = tree.getroot()
-            
-            # Count total text elements for progress tracking
-            total_elements = self._count_text_elements(root)
-            logger.info(f"Found {total_elements} text elements to translate")
-            
-            # Translate all text content recursively
-            translated_count = self._translate_xml_element(root, 0, total_elements)
-            
-            # Save the translated XML
-            logger.info(f"Saving translated XML to: {output_file}")
-            self._save_xml_pretty(tree, output_file)
-            
-            logger.info(f"XML translation completed successfully!")
-            logger.info(f"Translated {translated_count} text elements")
-            
-            return True
-            
-        except ET.ParseError as e:
-            logger.error(f"XML parsing error: {e}")
-            return False
-        except FileNotFoundError:
-            logger.error(f"Input file not found: {input_file}")
-            return False
-        except Exception as e:
-            logger.error(f"Error during XML translation: {e}")
-            return False
-    
-    def _count_text_elements(self, element) -> int:
-        """Count elements with text content for progress tracking."""
-        count = 0
-        if element.text and element.text.strip():
-            count += 1
-        if element.tail and element.tail.strip():
-            count += 1
-        for child in element:
-            count += self._count_text_elements(child)
-        return count
-    
-    def _translate_xml_element(self, element, current_count: int, total_count: int) -> int:
-        """
-        Recursively translate text content in XML elements.
-        
-        Args:
-            element: XML element to process
-            current_count: Current progress count
-            total_count: Total elements to process
-            
-        Returns:
-            Updated count of processed elements
-        """
-        processed_count = current_count
-        
-        # Translate element text content
-        if element.text and element.text.strip():
-            processed_count += 1
-            if processed_count % 10 == 0:  # Progress update every 10 elements
-                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
-            
-            original_text = element.text.strip()
-            translated_text = self.translate_text(original_text)
-            
-            # Preserve whitespace structure
-            if element.text.startswith(' ') or element.text.startswith('\n'):
-                element.text = element.text.replace(original_text, translated_text)
-            else:
-                element.text = translated_text
-        
-        # Translate tail text (text after closing tag)
-        if element.tail and element.tail.strip():
-            processed_count += 1
-            if processed_count % 10 == 0:
-                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
-            
-            original_tail = element.tail.strip()
-            translated_tail = self.translate_text(original_tail)
-            
-            # Preserve whitespace structure
-            if element.tail.startswith(' ') or element.tail.startswith('\n'):
-                element.tail = element.tail.replace(original_tail, translated_tail)
-            else:
-                element.tail = translated_tail
-          # Recursively process child elements
-        for child in element:
-            processed_count = self._translate_xml_element(child, processed_count, total_count)
-        
-        return processed_count
-    
-    def _save_xml_pretty(self, tree, output_file: str):
-        """Save XML with pretty formatting and CDATA preservation for HTML content."""
-        # Convert to string
-        xml_str = ET.tostring(tree.getroot(), encoding='unicode')
-        
-        # Restore CDATA sections for HTML content
-        xml_str = self._restore_cdata_for_html_content(xml_str)
-          # Parse with minidom for pretty printing
-        try:
-            dom = minidom.parseString(xml_str)
-            # Get pretty formatted XML with 4-space indentation to match original
-            pretty_xml = dom.toprettyxml(indent="    ")
-            
-            # Clean up extra blank lines that minidom adds
-            lines = []
-            for line in pretty_xml.split('\n'):
-                line = line.rstrip()  # Remove trailing whitespace
-                if line.strip():  # Only keep non-empty lines
-                    lines.append(line)
-            
-            # Save with pretty formatting
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines) + '\n')
-        except Exception as e:
-            logger.warning(f"Error pretty-printing XML: {e}. Writing raw XML.")
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
-                f.write(xml_str)
-    
-    def _restore_cdata_for_html_content(self, xml_str: str) -> str:
-        """Restore CDATA sections for content that contains HTML tags."""
-        import re
-        
-        # Look for content that has HTML entities (indicating original HTML/CDATA content)
-        # Pattern to match element content that contains HTML entities
-        pattern = r'(<([^>]+)>)([^<]*(?:&(?:lt|gt|amp|quot|apos);[^<]*)+)</\2>'
-        
-        def replace_with_cdata(match):
-            opening_tag = match.group(1)
-            tag_name = match.group(2)
-            content = match.group(3)
-            closing_tag = f'</{tag_name}>'
-            
-            # Unescape HTML entities
-            unescaped_content = (content
-                                .replace('&lt;', '<')
-                                .replace('&gt;', '>')
-                                .replace('&amp;', '&')
-                                .replace('&quot;', '"')
-                                .replace('&apos;', "'"))
-            
-            # If the unescaped content contains HTML tags, wrap in CDATA
-            if '<' in unescaped_content and '>' in unescaped_content:
-                return f'{opening_tag}<![CDATA[{unescaped_content}]]>{closing_tag}'
-            
-            return match.group(0)
-        
-        # Apply the replacement
-        result = re.sub(pattern, replace_with_cdata, xml_str, flags=re.DOTALL)
-        
-        return result
-
-    def _load_glossary(self) -> Dict[str, Dict[str, str]]:
-        """
-        Load the glossary CSV file for custom translation terms.
-        
-        Returns:
-            Dictionary mapping source terms to target terms and case preferences
-        """
-        glossary = {}
-        glossary_file = PROJECT_ROOT / "glossary.csv"
-        
-        if not glossary_file.exists():
-            logger.info("No glossary.csv file found. Using translation API only.")
-            return glossary
-        
-        try:
-            # Read the glossary CSV
-            with open(glossary_file, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            # Skip header and empty lines
-            for line_num, line in enumerate(lines[1:], 2):
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                
-                parts = line.split(';')
-                if len(parts) != 3:
-                    logger.warning(f"Glossary line {line_num} has wrong format (expected 3 columns): {line}")
-                    continue
-                
-                source_term, target_term, keep_case = parts
-                source_term = source_term.strip()
-                target_term = target_term.strip()
-                keep_case = keep_case.strip().lower() == 'true'
-                
-                if source_term and target_term:
-                    glossary[source_term.lower()] = {
-                        'target': target_term,
-                        'keep_case': keep_case
-                    }
-            
-            if glossary:
-                logger.info(f"Loaded {len(glossary)} terms from glossary.csv")
-            else:
-                logger.info("Glossary.csv file is empty or contains no valid entries")
-                
-        except Exception as e:
-            logger.warning(f"Error loading glossary.csv: {e}")
-        
-        return glossary
-    
-    def _apply_glossary_replacements(self, text: str) -> str:
-        """
-        Apply glossary replacements to text before translation.
-        
-        Args:
-            text: Text to process
-            
-        Returns:
-            Text with glossary terms replaced
-        """
-        if not hasattr(self, 'glossary') or not self.glossary:
-            return text
-        
-        result = text
-        
-        for source_term, config in self.glossary.items():
-            target_term = config['target']
-            keep_case = config['keep_case']
-            
-            # Create case-insensitive pattern for whole words
-            pattern = re.compile(r'\b' + re.escape(source_term) + r'\b', re.IGNORECASE)
-            
-            def replace_match(match):
-                matched_text = match.group(0)
-                
-                if keep_case:
-                    # Preserve the case pattern of the original match
-                    return self._preserve_case(matched_text, target_term)
-                else:
-                    # Use target term as-is
-                    return target_term
-            
-            result = pattern.sub(replace_match, result)
-        
-        return result
-    
-    def _preserve_case(self, original: str, replacement: str) -> str:
-        """
-        Preserve the case pattern of the original word when applying replacement.
-        
-        Args:
-            original: Original word with case pattern to preserve
-            replacement: Replacement word
-            
-        Returns:
-            Replacement word with case pattern of original
-        """
-        if original.isupper():
-            return replacement.upper()
-        elif original.islower():
-            return replacement.lower()
-        elif original.istitle():
-            return replacement.capitalize()
-        else:
-            # Mixed case - return replacement as-is
-            return replacement
-
-    def _translate_with_retry(self, text: str, max_retries: int = 3, base_delay: float = 0.05) -> str:
-        """
-        Translate text with exponential backoff retry mechanism.
-        
-        Args:
-            text: Text to translate
-            max_retries: Maximum number of retry attempts
-            base_delay: Base delay in seconds (will increase with each retry)
-            
-        Returns:
-            Translated text
-        """
-        if not text or len(text.strip()) <= 1:
-            return text
-            
-        text_clean = text.strip()
-        last_exception = None
-        
-        for attempt in range(max_retries + 1):  # +1 for initial attempt
-            try:
-                # Translate using the appropriate library
-                if TRANSLATOR_TYPE == "deep_translator":
-                    translated = self.translator.translate(text_clean)
-                elif TRANSLATOR_TYPE == "googletrans":
-                    result = self.translator.translate(
-                        text_clean, 
-                        src=self.source_lang, 
-                        dest=self.target_lang
-                    )
-                    translated = result.text
-                else:
-                    return text
-                
-                # Success! Add minimal delay and return
-                if attempt == 0:
-                    # First attempt - use minimal delay
-                    time.sleep(base_delay)
-                else:
-                    # Retry succeeded - use slightly longer delay to be respectful
-                    time.sleep(base_delay * 2)
-                    logger.debug(f"Translation succeeded on attempt {attempt + 1}")
-                
-                return translated
-                
-            except Exception as e:
-                last_exception = e
-                
-                if attempt < max_retries:
-                    # Calculate exponential backoff delay
-                    retry_delay = base_delay * (2 ** attempt) + (0.05 * attempt)  # 50ms extra per retry
-                    logger.debug(f"Translation attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
-                    time.sleep(retry_delay)
-                else:
-                    # All retries exhausted
-                    logger.warning(f"Translation failed after {max_retries + 1} attempts for '{text[:50]}...': {last_exception}")
-        
-        # If we get here, all attempts failed
-        return text
-
-    def _translate_plain_text(self, text: str) -> str:
-        """
-        Translate plain text without HTML.
-        
-        Args:
-            text: Plain text to translate
-            
-        Returns:
-            Translated text
-        """
-        if not text or len(text.strip()) <= 1:
-            return text
-            
-        try:
-            text_clean = text.strip()
-              # Translate using the appropriate library
-            if TRANSLATOR_TYPE == "deep_translator":
-                # deep_translator: translator was initialized with languages, so only pass text
-                translated = self.translator.translate(text_clean)
-            elif TRANSLATOR_TYPE == "googletrans":
-                # googletrans: generic translator, so pass text and language parameters
-                result = self.translator.translate(
-                    text_clean, 
-                    src=self.source_lang, 
-                    dest=self.target_lang
-                )
-                translated = result.text
-            else:
-                return text
-                
-            # Add delay to avoid rate limiting
-            time.sleep(self.delay)
-            
-            return translated
-            
-        except Exception as e:
-            logger.warning(f"Plain text translation failed for '{text}': {e}")
-            return text
-
-    def translate_xml(self, input_file: str, output_file: str) -> bool:
-        """
-        Translate text content in XML file while preserving structure and attributes.
-        
-        Args:
-            input_file: Path to input XML file
-            output_file: Path to output XML file
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            logger.info(f"Reading XML file: {input_file}")
-            
-            # Parse the XML file
-            tree = ET.parse(input_file)
-            root = tree.getroot()
-            
-            # Count total text elements for progress tracking
-            total_elements = self._count_text_elements(root)
-            logger.info(f"Found {total_elements} text elements to translate")
-            
-            # Translate all text content recursively
-            translated_count = self._translate_xml_element(root, 0, total_elements)
-            
-            # Save the translated XML
-            logger.info(f"Saving translated XML to: {output_file}")
-            self._save_xml_pretty(tree, output_file)
-            
-            logger.info(f"XML translation completed successfully!")
-            logger.info(f"Translated {translated_count} text elements")
-            
-            return True
-            
-        except ET.ParseError as e:
-            logger.error(f"XML parsing error: {e}")
-            return False
-        except FileNotFoundError:
-            logger.error(f"Input file not found: {input_file}")
-            return False
-        except Exception as e:
-            logger.error(f"Error during XML translation: {e}")
-            return False
-    
-    def _count_text_elements(self, element) -> int:
-        """Count elements with text content for progress tracking."""
-        count = 0
-        if element.text and element.text.strip():
-            count += 1
-        if element.tail and element.tail.strip():
-            count += 1
-        for child in element:
-            count += self._count_text_elements(child)
-        return count
-    
-    def _translate_xml_element(self, element, current_count: int, total_count: int) -> int:
-        """
-        Recursively translate text content in XML elements.
-        
-        Args:
-            element: XML element to process
-            current_count: Current progress count
-            total_count: Total elements to process
-            
-        Returns:
-            Updated count of processed elements
-        """
-        processed_count = current_count
-        
-        # Translate element text content
-        if element.text and element.text.strip():
-            processed_count += 1
-            if processed_count % 10 == 0:  # Progress update every 10 elements
-                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
-            
-            original_text = element.text.strip()
-            translated_text = self.translate_text(original_text)
-            
-            # Preserve whitespace structure
-            if element.text.startswith(' ') or element.text.startswith('\n'):
-                element.text = element.text.replace(original_text, translated_text)
-            else:
-                element.text = translated_text
-        
-        # Translate tail text (text after closing tag)
-        if element.tail and element.tail.strip():
-            processed_count += 1
-            if processed_count % 10 == 0:
-                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
-            
-            original_tail = element.tail.strip()
-            translated_tail = self.translate_text(original_tail)
-            
-            # Preserve whitespace structure
-            if element.tail.startswith(' ') or element.tail.startswith('\n'):
-                element.tail = element.tail.replace(original_tail, translated_tail)
-            else:
-                element.tail = translated_tail
-          # Recursively process child elements
-        for child in element:
-            processed_count = self._translate_xml_element(child, processed_count, total_count)
-        
-        return processed_count
-    
-    def _save_xml_pretty(self, tree, output_file: str):
-        """Save XML with pretty formatting and CDATA preservation for HTML content."""
-        # Convert to string
-        xml_str = ET.tostring(tree.getroot(), encoding='unicode')
-        
-        # Restore CDATA sections for HTML content
-        xml_str = self._restore_cdata_for_html_content(xml_str)
-          # Parse with minidom for pretty printing
-        try:
-            dom = minidom.parseString(xml_str)
-            # Get pretty formatted XML with 4-space indentation to match original
-            pretty_xml = dom.toprettyxml(indent="    ")
-            
-            # Clean up extra blank lines that minidom adds
-            lines = []
-            for line in pretty_xml.split('\n'):
-                line = line.rstrip()  # Remove trailing whitespace
-                if line.strip():  # Only keep non-empty lines
-                    lines.append(line)
-            
-            # Save with pretty formatting
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines) + '\n')
-        except Exception as e:
-            logger.warning(f"Error pretty-printing XML: {e}. Writing raw XML.")
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
-                f.write(xml_str)
-    
-    def _restore_cdata_for_html_content(self, xml_str: str) -> str:
-        """Restore CDATA sections for content that contains HTML tags."""
-        import re
-        
-        # Look for content that has HTML entities (indicating original HTML/CDATA content)
-        # Pattern to match element content that contains HTML entities
-        pattern = r'(<([^>]+)>)([^<]*(?:&(?:lt|gt|amp|quot|apos);[^<]*)+)</\2>'
-        
-        def replace_with_cdata(match):
-            opening_tag = match.group(1)
-            tag_name = match.group(2)
-            content = match.group(3)
-            closing_tag = f'</{tag_name}>'
-            
-            # Unescape HTML entities
-            unescaped_content = (content
-                                .replace('&lt;', '<')
-                                .replace('&gt;', '>')
-                                .replace('&amp;', '&')
-                                .replace('&quot;', '"')
-                                .replace('&apos;', "'"))
-            
-            # If the unescaped content contains HTML tags, wrap in CDATA
-            if '<' in unescaped_content and '>' in unescaped_content:
-                return f'{opening_tag}<![CDATA[{unescaped_content}]]>{closing_tag}'
-            
-            return match.group(0)
-        
-        # Apply the replacement
-        result = re.sub(pattern, replace_with_cdata, xml_str, flags=re.DOTALL)
-        
-        return result
-
-    def _load_glossary(self) -> Dict[str, Dict[str, str]]:
-        """
-        Load the glossary CSV file for custom translation terms.
-        
-        Returns:
-            Dictionary mapping source terms to target terms and case preferences
-        """
-        glossary = {}
-        glossary_file = PROJECT_ROOT / "glossary.csv"
-        
-        if not glossary_file.exists():
-            logger.info("No glossary.csv file found. Using translation API only.")
-            return glossary
-        
-        try:
-            # Read the glossary CSV
-            with open(glossary_file, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            # Skip header and empty lines
-            for line_num, line in enumerate(lines[1:], 2):
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                
-                parts = line.split(';')
-                if len(parts) != 3:
-                    logger.warning(f"Glossary line {line_num} has wrong format (expected 3 columns): {line}")
-                    continue
-                
-                source_term, target_term, keep_case = parts
-                source_term = source_term.strip()
-                target_term = target_term.strip()
-                keep_case = keep_case.strip().lower() == 'true'
-                
-                if source_term and target_term:
-                    glossary[source_term.lower()] = {
-                        'target': target_term,
-                        'keep_case': keep_case
-                    }
-            
-            if glossary:
-                logger.info(f"Loaded {len(glossary)} terms from glossary.csv")
-            else:
-                logger.info("Glossary.csv file is empty or contains no valid entries")
-                
-        except Exception as e:
-            logger.warning(f"Error loading glossary.csv: {e}")
-        
-        return glossary
-    
-    def _apply_glossary_replacements(self, text: str) -> str:
-        """
-        Apply glossary replacements to text before translation.
-        
-        Args:
-            text: Text to process
-            
-        Returns:
-            Text with glossary terms replaced
-        """
-        if not hasattr(self, 'glossary') or not self.glossary:
-            return text
-        
-        result = text
-        
-        for source_term, config in self.glossary.items():
-            target_term = config['target']
-            keep_case = config['keep_case']
-            
-            # Create case-insensitive pattern for whole words
-            pattern = re.compile(r'\b' + re.escape(source_term) + r'\b', re.IGNORECASE)
-            
-            def replace_match(match):
-                matched_text = match.group(0)
-                
-                if keep_case:
-                    # Preserve the case pattern of the original match
-                    return self._preserve_case(matched_text, target_term)
-                else:
-                    # Use target term as-is
-                    return target_term
-            
-            result = pattern.sub(replace_match, result)
-        
-        return result
-    
-    def _preserve_case(self, original: str, replacement: str) -> str:
-        """
-        Preserve the case pattern of the original word when applying replacement.
-        
-        Args:
-            original: Original word with case pattern to preserve
-            replacement: Replacement word
-            
-        Returns:
-            Replacement word with case pattern of original
-        """
-        if original.isupper():
-            return replacement.upper()
-        elif original.islower():
-            return replacement.lower()
-        elif original.istitle():
-            return replacement.capitalize()
-        else:
-            # Mixed case - return replacement as-is
-            return replacement
-
 def get_language_suffix(lang_code: str) -> str:
     """Generate a column suffix based on language code."""
     # Create a mapping for cleaner suffixes
@@ -1952,7 +929,13 @@ def get_language_preferences() -> Dict[str, str]:
     
     while True:
         try:
-            target_choice = input("Enter choice (1-10): ").strip()
+            target_choice = input("Enter choice (1-10): ")
+
+            # Check for empty input and set default
+            if target_choice.strip() == "":
+                target_choice = "1"
+                print("No choice entered, defaulting to 1. English (en)")
+            
             choice_idx = int(target_choice) - 1
             if 0 <= choice_idx < len(lang_options):
                 target_lang, target_name = lang_options[choice_idx]

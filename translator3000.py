@@ -57,6 +57,61 @@ TARGET_DIR = PROJECT_ROOT / "target"
 SOURCE_DIR.mkdir(exist_ok=True)
 TARGET_DIR.mkdir(exist_ok=True)
 
+# Default configuration values
+# Performance optimized settings - see PERFORMANCE.md for detailed analysis
+DEFAULT_CONFIG = {
+    'delay': 5,  # milliseconds between requests (optimal: 4.6 trans/sec vs 3.7 at 50ms)
+    'max_retries': 3,
+    'retry_base_delay': 20,
+    'csv_max_workers': 4,
+    'xml_max_workers': 4,
+    'multithreading_threshold': 2,
+    'progress_interval': 10
+}
+
+def load_config() -> Dict:
+    """Load configuration from translator3000.config file."""
+    config = DEFAULT_CONFIG.copy()
+    config_file = PROJECT_ROOT / "translator3000.config"
+    
+    if config_file.exists():
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.split('#')[0].strip()  # Remove inline comments
+                        
+                        if key in config:
+                            try:
+                                # Convert to appropriate type
+                                if isinstance(config[key], int):
+                                    config[key] = int(value)
+                                elif isinstance(config[key], float):
+                                    config[key] = float(value)
+                                else:
+                                    config[key] = value
+                            except ValueError:
+                                logger.warning(f"Invalid config value at line {line_num}: {line}")
+                        else:
+                            logger.warning(f"Unknown config key at line {line_num}: {key}")
+            
+            logger.info(f"Loaded configuration: delay={config['delay']}ms, max_workers={config['csv_max_workers']}")
+        except Exception as e:
+            logger.warning(f"Error loading config file: {e}. Using defaults.")
+    else:
+        logger.info(f"No config file found. Using defaults: delay={config['delay']}ms")
+    
+    return config
+
+# Load configuration
+CONFIG = load_config()
+
 # Supported languages for translation
 SUPPORTED_LANGUAGES = {
     'da': 'Danish',
@@ -99,7 +154,7 @@ except ImportError:
 class CSVTranslator:
     """A class to handle CSV file translation between different languages."""
     
-    def __init__(self, source_lang: str = 'en', target_lang: str = 'nl', delay_between_requests: float = 0.05):
+    def __init__(self, source_lang: str = 'en', target_lang: str = 'nl', delay_between_requests: float = None):
         """
         Initialize the CSV translator.
         
@@ -107,7 +162,7 @@ class CSVTranslator:
             source_lang: Source language code (e.g., 'en', 'da')
             target_lang: Target language code (e.g., 'nl', 'sv')
             delay_between_requests: Delay in seconds between translation requests
-                                  to avoid rate limiting
+                                  (if None, uses config file setting)
         """
         if TRANSLATOR_TYPE is None:
             raise ImportError("No translation library available. Please install deep-translator or googletrans")
@@ -118,11 +173,17 @@ class CSVTranslator:
         if target_lang not in SUPPORTED_LANGUAGES:
             raise ValueError(f"Unsupported target language: {target_lang}. Supported: {list(SUPPORTED_LANGUAGES.keys())}")
         
-        self.delay = delay_between_requests
+        # Use config delay if not explicitly provided (convert from ms to seconds)
+        if delay_between_requests is None:
+            self.delay = CONFIG['delay'] / 1000.0  # Convert ms to seconds
+        else:
+            self.delay = delay_between_requests
+        
         self.source_lang = source_lang
         self.target_lang = target_lang
         
         logger.info(f"Translator configured: {SUPPORTED_LANGUAGES[source_lang]} -> {SUPPORTED_LANGUAGES[target_lang]}")
+        logger.info(f"Request delay: {self.delay*1000:.1f}ms between requests")
           # Initialize the appropriate translator
         if TRANSLATOR_TYPE == "deep_translator":
             # For deep_translator, we create a translator instance with specific languages
@@ -178,7 +239,7 @@ class CSVTranslator:
             logger.warning(f"Translation failed for '{text}': {e}")
             return text  # Return original text if translation fails
 
-    def translate_column(self, df: pd.DataFrame, column_name: str, use_multithreading: bool = True, max_workers: int = 4) -> pd.Series:
+    def translate_column(self, df: pd.DataFrame, column_name: str, use_multithreading: bool = True, max_workers: int = None) -> pd.Series:
         """
         Translate an entire column of the DataFrame.
         
@@ -186,7 +247,7 @@ class CSVTranslator:
             df: DataFrame containing the data
             column_name: Name of the column to translate
             use_multithreading: Whether to use multithreading (default: True)
-            max_workers: Number of worker threads for multithreading (default: 4)
+            max_workers: Number of worker threads (uses config if None)
             
         Returns:
             Series with translated values
@@ -194,8 +255,12 @@ class CSVTranslator:
         if column_name not in df.columns:
             logger.error(f"Column '{column_name}' not found in DataFrame")
             return pd.Series()
+        
+        # Use config default if not specified
+        if max_workers is None:
+            max_workers = CONFIG['csv_max_workers']
           # Choose between multithreaded and single-threaded approach
-        if use_multithreading and len(df) > 2:  # Use multithreading for 3+ rows (lower threshold)
+        if use_multithreading and len(df) > CONFIG['multithreading_threshold']:
             return self.translate_column_multithreaded(df, column_name, max_workers)
         else:
             return self._translate_column_single_threaded(df, column_name)
@@ -217,7 +282,7 @@ class CSVTranslator:
         total_rows = len(df[column_name])
         
         for idx, value in enumerate(df[column_name]):
-            if idx % 10 == 0:  # Progress update every 10 rows
+            if idx % CONFIG['progress_interval'] == 0:  # Progress update based on config
                 logger.info(f"Progress: {idx + 1}/{total_rows} rows processed")
                 
             translated_value = self.translate_text(value)
@@ -226,14 +291,14 @@ class CSVTranslator:
         logger.info(f"Completed translation of column: {column_name}")
         return pd.Series(translated_values, index=df.index)
     
-    def translate_column_multithreaded(self, df: pd.DataFrame, column_name: str, max_workers: int = 4) -> pd.Series:
+    def translate_column_multithreaded(self, df: pd.DataFrame, column_name: str, max_workers: int = None) -> pd.Series:
         """
         Translate an entire column using multithreading for improved performance.
         
         Args:
             df: DataFrame containing the data
             column_name: Name of the column to translate
-            max_workers: Number of worker threads (default: 4)
+            max_workers: Number of worker threads (uses config if None)
             
         Returns:
             Series with translated values
@@ -241,6 +306,10 @@ class CSVTranslator:
         if column_name not in df.columns:
             logger.error(f"Column '{column_name}' not found in DataFrame")
             return pd.Series()
+        
+        # Use config default if not specified
+        if max_workers is None:
+            max_workers = CONFIG['csv_max_workers']
         
         logger.info(f"Translating column: {column_name} (using {max_workers} threads)")
         
@@ -260,7 +329,7 @@ class CSVTranslator:
             # Update progress in thread-safe manner
             with progress_lock:
                 progress_counter[0] += 1
-                if progress_counter[0] % 10 == 0:
+                if progress_counter[0] % CONFIG['progress_interval'] == 0:
                     logger.info(f"Progress: {progress_counter[0]}/{total_rows} rows processed")
             
             return idx, translated
@@ -453,20 +522,26 @@ class CSVTranslator:
             logger.warning(f"Regex HTML parsing failed: {e}")
             return html_text
     
-    def _translate_with_retry(self, text: str, max_retries: int = 3, base_delay: float = 0.05) -> str:
+    def _translate_with_retry(self, text: str, max_retries: int = None, base_delay: float = None) -> str:
         """
         Translate text with exponential backoff retry mechanism.
         
         Args:
             text: Text to translate
-            max_retries: Maximum number of retry attempts
-            base_delay: Base delay in seconds (will increase with each retry)
+            max_retries: Maximum number of retry attempts (uses config if None)
+            base_delay: Base delay in seconds (uses config if None)
             
         Returns:
             Translated text
         """
         if not text or len(text.strip()) <= 1:
             return text
+        
+        # Use config values if not provided
+        if max_retries is None:
+            max_retries = CONFIG['max_retries']
+        if base_delay is None:
+            base_delay = CONFIG['retry_base_delay'] / 1000.0  # Convert ms to seconds
             
         text_clean = text.strip()
         last_exception = None
@@ -488,11 +563,11 @@ class CSVTranslator:
                 
                 # Success! Add minimal delay and return
                 if attempt == 0:
-                    # First attempt - use minimal delay
-                    time.sleep(base_delay)
+                    # First attempt - use configured delay
+                    time.sleep(self.delay)
                 else:
                     # Retry succeeded - use slightly longer delay to be respectful
-                    time.sleep(base_delay * 2)
+                    time.sleep(self.delay * 2)
                     logger.debug(f"Translation succeeded on attempt {attempt + 1}")
                 
                 return translated
@@ -502,7 +577,7 @@ class CSVTranslator:
                 
                 if attempt < max_retries:
                     # Calculate exponential backoff delay
-                    retry_delay = base_delay * (2 ** attempt) + (0.05 * attempt)  # 50ms extra per retry
+                    retry_delay = base_delay * (2 ** attempt) + (0.01 * attempt)  # 10ms extra per retry
                     logger.debug(f"Translation attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
                     time.sleep(retry_delay)
                 else:
@@ -551,7 +626,7 @@ class CSVTranslator:
             logger.warning(f"Plain text translation failed for '{text}': {e}")
             return text
 
-    def translate_xml(self, input_file: str, output_file: str, use_multithreading: bool = True, max_workers: int = 4) -> bool:
+    def translate_xml(self, input_file: str, output_file: str, use_multithreading: bool = True, max_workers: int = None) -> bool:
         """
         Translate text content in XML file while preserving structure and attributes.
         
@@ -559,11 +634,15 @@ class CSVTranslator:
             input_file: Path to input XML file
             output_file: Path to output XML file
             use_multithreading: Whether to use multithreading (default: True)
-            max_workers: Number of worker threads for multithreading (default: 4)
+            max_workers: Number of worker threads (uses config if None)
             
         Returns:
             True if successful, False otherwise
         """
+        # Use config default if not specified
+        if max_workers is None:
+            max_workers = CONFIG['xml_max_workers']
+            
         if use_multithreading:
             return self.translate_xml_multithreaded(input_file, output_file, max_workers)
         else:
@@ -627,18 +706,22 @@ class CSVTranslator:
             logger.error(f"Error during XML translation: {e}")
             return False
     
-    def translate_xml_multithreaded(self, input_file: str, output_file: str, max_workers: int = 4) -> bool:
+    def translate_xml_multithreaded(self, input_file: str, output_file: str, max_workers: int = None) -> bool:
         """
         Translate text content in XML file using multithreading for better performance.
         
         Args:
             input_file: Path to input XML file
             output_file: Path to output XML file
-            max_workers: Number of worker threads (default: 4)
+            max_workers: Number of worker threads (uses config if None)
             
         Returns:
             True if successful, False otherwise
         """
+        # Use config default if not specified
+        if max_workers is None:
+            max_workers = CONFIG['xml_max_workers']
+            
         try:
             logger.info(f"Reading XML file: {input_file}")
             
@@ -660,7 +743,7 @@ class CSVTranslator:
                 return True
             
             # Use multithreading if we have enough elements
-            if total_elements > 2 and max_workers > 1:
+            if total_elements > CONFIG['multithreading_threshold'] and max_workers > 1:
                 logger.info(f"Using multithreaded XML translation with {max_workers} workers")
                 success = self._translate_xml_elements_multithreaded(text_elements, max_workers)
             else:
@@ -731,7 +814,7 @@ class CSVTranslator:
                     # Update progress in thread-safe manner
                     with progress_lock:
                         progress_counter[0] += 1
-                        if progress_counter[0] % 10 == 0 or progress_counter[0] == total_elements:
+                        if progress_counter[0] % CONFIG['progress_interval'] == 0 or progress_counter[0] == total_elements:
                             logger.info(f"Progress: {progress_counter[0]}/{total_elements} elements processed")
                     
                     return {
@@ -800,7 +883,7 @@ class CSVTranslator:
             total_elements = len(text_elements)
             
             for idx, text_data in enumerate(text_elements):
-                if (idx + 1) % 10 == 0 or (idx + 1) == total_elements:
+                if (idx + 1) % CONFIG['progress_interval'] == 0 or (idx + 1) == total_elements:
                     logger.info(f"Progress: {idx + 1}/{total_elements} elements processed")
                 
                 original_text = text_data['original']
@@ -1507,11 +1590,11 @@ def main():
             print("❌ Translation cancelled or no valid input provided.")
             return
         
-        # Create translator with selected languages
+        # Create translator with selected languages (using config defaults)
         translator = CSVTranslator(
             source_lang=user_input['source_lang'],
-            target_lang=user_input['target_lang'],
-            delay_between_requests=0.05
+            target_lang=user_input['target_lang']
+            # delay_between_requests will use config file value automatically
         )
         
         print(f"\n🔧 Translator initialized: {user_input['source_name']} -> {user_input['target_name']}")

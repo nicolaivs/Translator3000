@@ -1209,7 +1209,334 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
         except Exception as e:
             print(f"Error reading CSV file with {chosen_delimiter} delimiter: {e}")
             return {}
+    
+    # Display detected columns for user confirmation
+    print(f"\nDetected CSV structure:")
+    for col in df_preview.columns:
+        print(f"  - {col}")
+    
+    # Ask user to confirm or re-select columns
+    columns_to_translate = list(df_preview.columns)  # Default to all columns
+    confirm = input("\nTranslate all columns? (Y/n): ").strip().lower()
+    if confirm == 'n':
+        # Let user select specific columns
+        columns_to_translate = []
+        while True:
+            col_choice = input("Enter column name (or blank to finish): ").strip()
+            if not col_choice:
+                break
+            if col_choice in df_preview.columns:
+                columns_to_translate.append(col_choice)
+            else:
+                print(f"Column '{col_choice}' not found. Please enter a valid column name.")
+    
+    # Generate column suffix based on target language
+    suffix = f"_{get_language_suffix(lang_prefs['target_lang'])}"
+    
+    return {
+        'mode': 'single',
+        'selected_file': selected_file,
+        'output_file': None,  # To be generated
+        'columns_to_translate': columns_to_translate,
+        'delimiter': chosen_delimiter,
+        'append_suffix': suffix,
+        'source_lang': lang_prefs['source_lang'],
+        'target_lang': lang_prefs['target_lang'],
+        'source_name': lang_prefs['source_name'],
+        'target_name': lang_prefs['target_name']
+    }
+
+def get_batch_folder_selection(discovered: Dict[str, List[Path]]) -> Dict[str, any]:
+    """Get user selection for which folders to process in batch mode."""
+    print("\nBatch folder selection:")
+    
+    options = []
+    
+    # Option 1: Root files only
+    if discovered['root_files']:
+        root_count = len(discovered['root_files'])
+        options.append(('root', f"Process root directory only ({root_count} files)"))
+    
+    # Option 2: Individual folders
+    for folder_name, files in discovered['folders'].items():
+        file_count = len(files)
+        options.append(('folder', f"Process '{folder_name}' folder only ({file_count} files)", folder_name))
+    
+    # Option 3: All files
+    total_files = len(discovered['root_files']) + sum(len(files) for files in discovered['folders'].values())
+    options.append(('all', f"Process all files and folders ({total_files} files)"))
+    
+    # Display options
+    for i, option in enumerate(options, 1):
+        if option[0] == 'folder':
+            print(f"  {i}. {option[1]}")
+        else:
+            print(f"  {i}. {option[1]}")
+    
+    # Get user choice
+    while True:
+        try:
+            choice = input(f"Enter choice (1-{len(options)}): ").strip()
+            if not choice:
+                choice = "1"  # Default to first option
+            
+            choice_idx = int(choice) - 1
+            if 0 <= choice_idx < len(options):
+                selected_option = options[choice_idx]
+                
+                if selected_option[0] == 'root':
+                    return {'type': 'root'}
+                elif selected_option[0] == 'folder':
+                    return {'type': 'folder', 'folder_name': selected_option[2]}
+                elif selected_option[0] == 'all':
+                    return {'type': 'all'}
+            else:
+                print(f"Invalid choice! Please enter a number between 1-{len(options)}.")
+        except ValueError:
+            print("Invalid input! Please enter a number.")
+
+def get_xml_input_single(selected_file: Path, input_file: str, output_dir: Path, lang_prefs: Dict) -> Dict[str, any]:
+    """Get XML-specific input parameters for single file mode."""
+    
+    # For XML files, we don't need column selection - just generate output filename
+    output_filename = generate_output_filename(selected_file.name, lang_prefs['target_lang'], is_root_file=True)
+    output_file = output_dir / output_filename
+    
+    print(f"\n📋 XML Translation Summary:")
+    print(f"  📁 Input file: {selected_file.name}")
+    print(f"  📁 Output file: {output_filename}")
+    print(f"  🌐 Translation: {lang_prefs['source_name']} -> {lang_prefs['target_name']}")
+    print(f"  🏷️  Processing: All text content (preserving XML structure)")
+    
+    return {
+        'mode': 'single',
+        'selected_file': selected_file,
+        'output_file': output_file,
+        'source_lang': lang_prefs['source_lang'],
+        'target_lang': lang_prefs['target_lang'],
+        'source_name': lang_prefs['source_name'],
+        'target_name': lang_prefs['target_name']
+    }
+
+def main():
+    """Main interactive workflow for the translation script."""
+    try:
+        print("=" * 60)
+        print("🌍 Translator3000 - Multi-Language CSV & XML Translation")
+        print("=" * 60)
+        print()
+        
+        # Ensure source and target directories exist
+        SOURCE_DIR.mkdir(exist_ok=True)
+        TARGET_DIR.mkdir(exist_ok=True)
+        
+        # Get user input for batch processing (which includes language and file selection)
+        user_input = get_batch_processing_input()
+        
+        if not user_input:
+            print("❌ Translation cancelled or no valid input provided.")
+            return
+        
+        # Create translator with selected languages
+        translator = CSVTranslator(
+            source_lang=user_input['source_lang'],
+            target_lang=user_input['target_lang'],
+            delay_between_requests=0.05
+        )
+        
+        print(f"\n🔧 Translator initialized: {user_input['source_name']} -> {user_input['target_name']}")
+        
+        # Process based on mode
+        if user_input['mode'] == 'batch':
+            print("\n🚀 Starting batch processing...")
+            success = process_batch_mode(translator, user_input)
+        else:
+            print("\n🚀 Starting single file processing...")
+            success = process_single_file_mode(translator, user_input)
+        
+        if success:
+            print("\n✅ Translation completed successfully!")
+            print(f"📁 Check the output files in: {TARGET_DIR}")
+        else:
+            print("\n❌ Translation completed with some errors.")
+            print("📋 Check translation.log for details.")
+            
+    except KeyboardInterrupt:
+        print("\n❌ Translation cancelled by user.")
+    except Exception as e:
+        logger.error(f"Unexpected error in main workflow: {e}")
+        print(f"\n❌ An unexpected error occurred: {e}")
+        print("📋 Check translation.log for details.")
+
+def process_batch_mode(translator: CSVTranslator, user_input: Dict) -> bool:
+    """Process files in batch mode."""
+    discovered = user_input['discovered']
+    folder_choice = user_input['folder_choice']
+    target_lang = user_input['target_lang']
+    
+    # Determine which files to process
+    files_to_process = []
+    
+    if folder_choice['type'] == 'root':
+        files_to_process = [(f, 'root') for f in discovered['root_files']]
+    elif folder_choice['type'] == 'folder':
+        folder_name = folder_choice['folder_name']
+        files_to_process = [(f, folder_name) for f in discovered['folders'][folder_name]]
+    elif folder_choice['type'] == 'all':
+        # Add root files
+        files_to_process.extend([(f, 'root') for f in discovered['root_files']])
+        # Add folder files
+        for folder_name, files in discovered['folders'].items():
+            files_to_process.extend([(f, folder_name) for f in files])
+    
+    success_count = 0
+    total_files = len(files_to_process)
+    
+    print(f"\n📊 Processing {total_files} files...")
+    
+    for idx, (file_path, location) in enumerate(files_to_process, 1):
+        print(f"\n[{idx}/{total_files}] Processing: {file_path.name}")
+        
+        # Generate output directory and filename
+        if location == 'root':
+            output_dir = TARGET_DIR
+            output_filename = generate_output_filename(file_path.name, target_lang, is_root_file=True)
+        else:
+            output_dir = generate_output_directory(TARGET_DIR, location, target_lang, is_batch_folder=True)
+            output_filename = generate_output_filename(file_path.name, target_lang, is_root_file=False)
+        
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / output_filename
+        
+        # Process file based on type
+        success = False
+        if file_path.suffix.lower() == '.csv':
+            success = process_csv_file_batch(translator, file_path, output_file)
+        elif file_path.suffix.lower() == '.xml':
+            success = translator.translate_xml(str(file_path), str(output_file))
+        
+        if success:
+            success_count += 1
+            print(f"✅ {file_path.name} -> {output_filename}")
+        else:
+            print(f"❌ Failed to process {file_path.name}")
+    
+    print(f"\n📊 Batch processing complete: {success_count}/{total_files} files processed successfully")
+    return success_count > 0
+
+def process_csv_file_batch(translator: CSVTranslator, input_file: Path, output_file: Path) -> bool:
+    """Process a single CSV file in batch mode with automatic column detection."""
+    try:
+        # Auto-detect delimiter
+        delimiter = detect_csv_delimiter(str(input_file))
+        print(f"  📄 Detected delimiter: '{delimiter}'")
+        
+        # Read CSV to analyze columns
+        df = pd.read_csv(input_file, nrows=5, delimiter=delimiter)
+        
+        # Auto-detect text columns (columns likely to contain translatable text)
+        text_columns = []
+        for col in df.columns:
+            if df[col].dtype == 'object':  # Text columns
+                # Check if column contains substantial text (not just codes/IDs)
+                sample_text = df[col].dropna().astype(str).iloc[0] if not df[col].dropna().empty else ""
+                if len(sample_text) > 10:  # Likely to be translatable text
+                    text_columns.append(col)
+        
+        if not text_columns:
+            print(f"  ⚠️  No suitable text columns found for translation")
+            return False
+        
+        print(f"  🔤 Auto-detected text columns: {text_columns}")
+        
+        # Generate column suffix based on target language
+        suffix = f"_{get_language_suffix(translator.target_lang)}"
+        
+        # Translate the file
+        success = translator.translate_csv(
+            input_file=str(input_file),
+            output_file=str(output_file),
+            columns_to_translate=text_columns,
+            append_suffix=suffix,
+            delimiter=delimiter
+        )
+        
+        return success
+        
+    except Exception as e:
+        logger.error(f"Error processing CSV file {input_file}: {e}")
+        return False
+
+def process_single_file_mode(translator: CSVTranslator, user_input: Dict) -> bool:
+    """Process a single file based on user selection."""
+    selected_file = user_input['selected_file']
+    output_file = user_input['output_file']
+    
+    print(f"📄 Processing: {selected_file.name}")
+    print(f"💾 Output: {output_file}")
+    
+    if selected_file.suffix.lower() == '.csv':
+        # For CSV, use the column and delimiter info from user input
+        columns_to_translate = user_input['columns_to_translate']
+        delimiter = user_input['delimiter']
+        suffix = user_input['append_suffix']
+        
+        print(f"🔤 Translating columns: {columns_to_translate}")
+        print(f"📄 Using delimiter: '{delimiter}'")
+        
+        success = translator.translate_csv(
+            input_file=str(selected_file),
+            output_file=str(output_file),
+            columns_to_translate=columns_to_translate,
+            append_suffix=suffix,
+            delimiter=delimiter
+        )
+    elif selected_file.suffix.lower() == '.xml':
+        print("🏷️  Processing XML file...")
+        success = translator.translate_xml(str(selected_file), str(output_file))
+    else:
+        print(f"❌ Unsupported file type: {selected_file.suffix}")
+        return False
+    
+    return success
+
+def detect_csv_delimiter(file_path: str) -> str:
+    """
+    Auto-detect CSV delimiter by analyzing the first few lines.
+    
+    Args:
+        file_path: Path to the CSV file
+        
+    Returns:
+        Detected delimiter (comma or semicolon)
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            # Read first few lines to analyze
+            sample_lines = []
+            for i, line in enumerate(f):
+                if i >= 3:  # Analyze first 3 lines
+                    break
+                sample_lines.append(line.strip())
+        
+        if not sample_lines:
+            return ","  # Default to comma
+        
+        # Count commas and semicolons in the sample
+        comma_count = sum(line.count(',') for line in sample_lines)
+        semicolon_count = sum(line.count(';') for line in sample_lines)
+        
+        # Return the more frequent delimiter
+        if semicolon_count > comma_count:
+            logger.debug(f"Auto-detected semicolon delimiter (commas: {comma_count}, semicolons: {semicolon_count})")
+            return ";"
+        else:
+            logger.debug(f"Auto-detected comma delimiter (commas: {comma_count}, semicolons: {semicolon_count})")
+            return ","
+            
+    except Exception as e:
+        logger.warning(f"Error detecting CSV delimiter: {e}. Using comma as default.")
+        return ","
 
 if __name__ == "__main__":
-    # Main execution would go here - currently handled by interactive mode
-    pass
+    main()

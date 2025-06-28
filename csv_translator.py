@@ -151,8 +151,7 @@ class CSVTranslator:
                 # Plain text translation
                 translated = self._translate_plain_text(text_str)
                 
-            logger.debug(f"Translated: '{text_str[:50]}...' -> '{translated[:50]}...'")
-            
+            logger.debug(f"Translated: '{text_str[:50]}...' -> '{translated[:50]}...'")            
             return translated
             
         except Exception as e:
@@ -166,7 +165,8 @@ class CSVTranslator:
         Args:
             df: DataFrame containing the data
             column_name: Name of the column to translate
-              Returns:
+            
+        Returns:
             Series with translated values
         """
         if column_name not in df.columns:
@@ -192,7 +192,7 @@ class CSVTranslator:
                      input_file: str, 
                      output_file: str, 
                      columns_to_translate: List[str],
-                     append_suffix: str = "_dutch",
+                     append_suffix: str = "_translated",
                      delimiter: str = ",") -> bool:
         """
         Translate specified columns in a CSV file and save the result.
@@ -201,7 +201,7 @@ class CSVTranslator:
             input_file: Path to input CSV file
             output_file: Path to output CSV file
             columns_to_translate: List of column names to translate
-            append_suffix: Suffix to append to translated column names
+            append_suffix: Suffix to append to translated column names (e.g., "_german", "_french")
             delimiter: CSV delimiter (comma "," or semicolon ";")
             
         Returns:
@@ -443,6 +443,23 @@ def get_language_preferences() -> Dict[str, str]:
         'target_name': SUPPORTED_LANGUAGES[target_lang]
     }
     
+def get_language_suffix(lang_code: str) -> str:
+    """Generate a column suffix based on language code."""
+    # Create a mapping for cleaner suffixes
+    suffix_mapping = {
+        'da': '_danish',
+        'nl': '_dutch',
+        'nl-be': '_flemish',
+        'en': '_english',
+        'fr': '_french',
+        'de': '_german',
+        'it': '_italian',
+        'no': '_norwegian',
+        'es': '_spanish',
+        'sv': '_swedish'
+    }
+    return suffix_mapping.get(lang_code, f'_{lang_code}')
+
 def get_user_input() -> Dict[str, any]:
     """Get user input for translation parameters."""
     # Get language preferences first
@@ -596,11 +613,14 @@ def main():
     print(f"Columns to translate: {params['columns_to_translate']}")
     print(f"CSV delimiter: '{params['delimiter']}'")
     print("\nThis may take a while depending on the size of your file...")
+      # Generate language-specific suffix
+    language_suffix = get_language_suffix(params['target_lang'])
     
     success = translator.translate_csv(
         input_file=params['input_file'],
         output_file=params['output_file'],
         columns_to_translate=params['columns_to_translate'],
+        append_suffix=language_suffix,
         delimiter=params['delimiter']
     )
     

@@ -66,7 +66,10 @@ DEFAULT_CONFIG = {
     'csv_max_workers': 4,
     'xml_max_workers': 4,
     'multithreading_threshold': 2,
-    'progress_interval': 10
+    'progress_interval': 10,
+    'translation_services': 'deep_translator,googletrans,libretranslate',
+    'libretranslate_url': 'https://libretranslate.com/translate',
+    'libretranslate_api_key': ''
 }
 
 def load_config() -> Dict:
@@ -126,20 +129,56 @@ SUPPORTED_LANGUAGES = {
     'sv': 'Swedish'
 }
 
-# Try to import translation libraries in order of preference
-TRANSLATOR_TYPE = None
+# Try to import translation libraries based on config preference
+AVAILABLE_TRANSLATORS = {}
+
+# Check for LibreTranslate support (requests library)
+try:
+    import requests
+    AVAILABLE_TRANSLATORS['libretranslate'] = True
+    logger.info("LibreTranslate support available (requests library found)")
+except ImportError:
+    AVAILABLE_TRANSLATORS['libretranslate'] = False
+    logger.info("LibreTranslate support unavailable (requests library not found)")
+
+# Check for deep_translator
 try:
     from deep_translator import GoogleTranslator
-    TRANSLATOR_TYPE = "deep_translator"
-    logger.info("Using deep-translator library")
+    AVAILABLE_TRANSLATORS['deep_translator'] = True
+    logger.info("deep-translator library available")
 except ImportError:
-    try:
-        from googletrans import Translator
-        TRANSLATOR_TYPE = "googletrans"
-        logger.info("Using googletrans library")
-    except ImportError:
-        logger.error("No translation library available. Please install deep-translator or googletrans")
-        TRANSLATOR_TYPE = None
+    AVAILABLE_TRANSLATORS['deep_translator'] = False
+    logger.info("deep-translator library not available")
+
+# Check for googletrans
+try:
+    from googletrans import Translator
+    AVAILABLE_TRANSLATORS['googletrans'] = True
+    logger.info("googletrans library available")
+except ImportError:
+    AVAILABLE_TRANSLATORS['googletrans'] = False
+    logger.info("googletrans library not available")
+
+# Determine available translation services based on config preference
+def get_translation_services():
+    """Get available translation services in order of preference."""
+    preferred_order = CONFIG['translation_services'].split(',')
+    available_services = []
+    
+    for service in preferred_order:
+        service = service.strip()
+        if service in AVAILABLE_TRANSLATORS and AVAILABLE_TRANSLATORS[service]:
+            available_services.append(service)
+    
+    if not available_services:
+        logger.error("No translation services available! Please install at least one: requests, deep-translator, or googletrans")
+        return []
+    
+    logger.info(f"Available translation services (in order): {', '.join(available_services)}")
+    return available_services
+
+# Get the ordered list of translation services
+TRANSLATION_SERVICES = get_translation_services()
 
 # Try to import BeautifulSoup for better HTML handling
 try:
@@ -151,12 +190,69 @@ except ImportError:
     logger.info("BeautifulSoup not available, using regex for HTML parsing")
 
 
+class LibreTranslateService:
+    """LibreTranslate API service wrapper."""
+    
+    def __init__(self, source_lang: str, target_lang: str, api_url: str, api_key: str = ""):
+        self.source_lang = source_lang
+        self.target_lang = target_lang
+        self.api_url = api_url
+        self.api_key = api_key
+        
+        # Validate that requests is available
+        if 'libretranslate' not in AVAILABLE_TRANSLATORS or not AVAILABLE_TRANSLATORS['libretranslate']:
+            raise ImportError("LibreTranslate requires the 'requests' library")
+    
+    def translate(self, text: str) -> str:
+        """Translate text using LibreTranslate API."""
+        if not text or not text.strip():
+            return text
+            
+        payload = {
+            "q": text.strip(),
+            "source": self.source_lang,
+            "target": self.target_lang
+        }
+        
+        headers = {"Content-Type": "application/json"}
+        
+        # Add API key if provided
+        if self.api_key:
+            payload["api_key"] = self.api_key
+        
+        try:
+            import requests
+            response = requests.post(self.api_url, json=payload, headers=headers, timeout=10)
+            
+            if response.status_code == 429:
+                raise Exception("Rate limit exceeded - consider using an API key")
+            elif response.status_code == 403:
+                raise Exception("Access forbidden - check API key")
+            elif response.status_code != 200:
+                raise Exception(f"HTTP {response.status_code}: {response.text}")
+            
+            result = response.json()
+            if 'translatedText' in result:
+                return result['translatedText']
+            else:
+                raise Exception(f"Unexpected response format: {result}")
+                
+        except requests.exceptions.Timeout:
+            raise Exception("Request timeout - LibreTranslate server may be overloaded")
+        except requests.exceptions.ConnectionError:
+            raise Exception("Connection error - check internet connection")
+        except Exception as e:
+            if "Rate limit" in str(e) or "429" in str(e):
+                raise Exception("LibreTranslate rate limit hit - falling back to next service")
+            raise Exception(f"LibreTranslate API error: {e}")
+
+
 class CSVTranslator:
     """A class to handle CSV file translation between different languages."""
     
     def __init__(self, source_lang: str = 'en', target_lang: str = 'nl', delay_between_requests: float = None):
         """
-        Initialize the CSV translator.
+        Initialize the CSV translator with multiple translation service support.
         
         Args:
             source_lang: Source language code (e.g., 'en', 'da')
@@ -164,8 +260,8 @@ class CSVTranslator:
             delay_between_requests: Delay in seconds between translation requests
                                   (if None, uses config file setting)
         """
-        if TRANSLATOR_TYPE is None:
-            raise ImportError("No translation library available. Please install deep-translator or googletrans")
+        if not TRANSLATION_SERVICES:
+            raise ImportError("No translation services available. Please install at least one: requests, deep-translator, or googletrans")
         
         # Validate language codes
         if source_lang not in SUPPORTED_LANGUAGES:
@@ -184,18 +280,47 @@ class CSVTranslator:
         
         logger.info(f"Translator configured: {SUPPORTED_LANGUAGES[source_lang]} -> {SUPPORTED_LANGUAGES[target_lang]}")
         logger.info(f"Request delay: {self.delay*1000:.1f}ms between requests")
-          # Initialize the appropriate translator
-        if TRANSLATOR_TYPE == "deep_translator":
-            # For deep_translator, we create a translator instance with specific languages
-            self.translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)        
-        elif TRANSLATOR_TYPE == "googletrans":
-            # For googletrans, we create a generic translator instance
-            self.translator = Translator()
-        else:
-            raise ImportError("No valid translator found")
+        
+        # Initialize translation services in order of preference
+        self.translators = []
+        self._initialize_translators()
         
         # Load glossary for custom translations
         self.glossary = self._load_glossary()
+    
+    def _initialize_translators(self):
+        """Initialize available translation services in order of preference."""
+        for service in TRANSLATION_SERVICES:
+            try:
+                if service == 'libretranslate':
+                    translator = LibreTranslateService(
+                        source_lang=self.source_lang,
+                        target_lang=self.target_lang,
+                        api_url=CONFIG['libretranslate_url'],
+                        api_key=CONFIG['libretranslate_api_key']
+                    )
+                    self.translators.append(('libretranslate', translator))
+                    logger.info(f"✓ LibreTranslate service initialized")
+                
+                elif service == 'deep_translator':
+                    from deep_translator import GoogleTranslator
+                    translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)
+                    self.translators.append(('deep_translator', translator))
+                    logger.info(f"✓ deep-translator service initialized")
+                
+                elif service == 'googletrans':
+                    from googletrans import Translator
+                    translator = Translator()
+                    self.translators.append(('googletrans', translator))
+                    logger.info(f"✓ googletrans service initialized")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to initialize {service}: {e}")
+        
+        if not self.translators:
+            raise ImportError("No translation services could be initialized")
+        
+        logger.info(f"Active translation services: {[name for name, _ in self.translators]}")
     
     def translate_text(self, text: str) -> str:
         """
@@ -524,7 +649,7 @@ class CSVTranslator:
     
     def _translate_with_retry(self, text: str, max_retries: int = None, base_delay: float = None) -> str:
         """
-        Translate text with exponential backoff retry mechanism.
+        Translate text with exponential backoff retry mechanism using multiple services.
         
         Args:
             text: Text to translate
@@ -544,52 +669,57 @@ class CSVTranslator:
             base_delay = CONFIG['retry_base_delay'] / 1000.0  # Convert ms to seconds
             
         text_clean = text.strip()
-        last_exception = None
         
-        for attempt in range(max_retries + 1):  # +1 for initial attempt
-            try:
-                # Translate using the appropriate library
-                if TRANSLATOR_TYPE == "deep_translator":
-                    translated = self.translator.translate(text_clean)
-                elif TRANSLATOR_TYPE == "googletrans":
-                    result = self.translator.translate(
-                        text_clean, 
-                        src=self.source_lang, 
-                        dest=self.target_lang
-                    )
-                    translated = result.text
-                else:
-                    return text
-                
-                # Success! Add minimal delay and return
-                if attempt == 0:
-                    # First attempt - use configured delay
-                    time.sleep(self.delay)
-                else:
-                    # Retry succeeded - use slightly longer delay to be respectful
-                    time.sleep(self.delay * 2)
-                    logger.debug(f"Translation succeeded on attempt {attempt + 1}")
-                
-                return translated
-                
-            except Exception as e:
-                last_exception = e
-                
-                if attempt < max_retries:
-                    # Calculate exponential backoff delay
-                    retry_delay = base_delay * (2 ** attempt) + (0.01 * attempt)  # 10ms extra per retry
-                    logger.debug(f"Translation attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
-                    time.sleep(retry_delay)
-                else:
-                    # All retries exhausted
-                    logger.warning(f"Translation failed after {max_retries + 1} attempts for '{text[:50]}...': {last_exception}")
+        # Try each translation service in order
+        for service_name, translator in self.translators:
+            logger.debug(f"Trying translation with {service_name}...")
+            
+            for attempt in range(max_retries + 1):  # +1 for initial attempt
+                try:
+                    # Translate using the current service
+                    if service_name == "libretranslate":
+                        translated = translator.translate(text_clean)
+                    elif service_name == "deep_translator":
+                        translated = translator.translate(text_clean)
+                    elif service_name == "googletrans":
+                        result = translator.translate(
+                            text_clean, 
+                            src=self.source_lang, 
+                            dest=self.target_lang
+                        )
+                        translated = result.text
+                    else:
+                        continue  # Skip unknown service
+                    
+                    # Success! Add delay and return
+                    if attempt == 0:
+                        # First attempt - use configured delay
+                        time.sleep(self.delay)
+                    else:
+                        # Retry succeeded - use slightly longer delay to be respectful
+                        time.sleep(self.delay * 2)
+                        logger.debug(f"Translation succeeded on attempt {attempt + 1} with {service_name}")
+                    
+                    logger.debug(f"✓ Translation successful with {service_name}")
+                    return translated
+                    
+                except Exception as e:
+                    if attempt < max_retries:
+                        # Calculate exponential backoff delay
+                        retry_delay = base_delay * (2 ** attempt) + (0.01 * attempt)  # 10ms extra per retry
+                        logger.debug(f"{service_name} attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
+                        time.sleep(retry_delay)
+                    else:
+                        # All retries exhausted for this service
+                        logger.warning(f"{service_name} failed after {max_retries + 1} attempts: {e}")
         
-        # If we get here, all attempts failed
+        # If we get here, all services failed
+        logger.warning(f"All translation services failed for '{text[:50]}...'. Returning original text.")
         return text
 
     def _translate_plain_text(self, text: str) -> str:
         """
-        Translate plain text without HTML.
+        Translate plain text without HTML using multiple services with fallback.
         
         Args:
             text: Plain text to translate
@@ -602,28 +732,40 @@ class CSVTranslator:
             
         try:
             text_clean = text.strip()
-              # Translate using the appropriate library
-            if TRANSLATOR_TYPE == "deep_translator":
-                # deep_translator: translator was initialized with languages, so only pass text
-                translated = self.translator.translate(text_clean)
-            elif TRANSLATOR_TYPE == "googletrans":
-                # googletrans: generic translator, so pass text and language parameters
-                result = self.translator.translate(
-                    text_clean, 
-                    src=self.source_lang, 
-                    dest=self.target_lang
-                )
-                translated = result.text
-            else:
-                return text
-                
-            # Add delay to avoid rate limiting
-            time.sleep(self.delay)
             
-            return translated
+            # Try each translation service in order
+            for service_name, translator in self.translators:
+                try:
+                    # Translate using the current service
+                    if service_name == "libretranslate":
+                        translated = translator.translate(text_clean)
+                    elif service_name == "deep_translator":
+                        translated = translator.translate(text_clean)
+                    elif service_name == "googletrans":
+                        result = translator.translate(
+                            text_clean, 
+                            src=self.source_lang, 
+                            dest=self.target_lang
+                        )
+                        translated = result.text
+                    else:
+                        continue  # Skip unknown service
+                    
+                    # Success! Add delay and return
+                    time.sleep(self.delay)
+                    logger.debug(f"✓ Translation successful with {service_name}")
+                    return translated
+                    
+                except Exception as e:
+                    logger.debug(f"{service_name} failed: {e}. Trying next service...")
+                    continue
+            
+            # If we get here, all services failed
+            logger.warning(f"All translation services failed for '{text}'. Returning original text.")
+            return text
             
         except Exception as e:
-            logger.warning(f"Plain text translation failed for '{text}': {e}")
+            logger.warning(f"Translation error for '{text}': {e}")
             return text
 
     def translate_xml(self, input_file: str, output_file: str, use_multithreading: bool = True, max_workers: int = None) -> bool:

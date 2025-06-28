@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script to compare translation speeds with different delay settings.
+Test script to compare translation speeds and services.
 """
 
 import time
@@ -10,52 +10,84 @@ from pathlib import Path
 # Add the current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from translator3000 import CSVTranslator
+from translator3000 import CSVTranslator, TRANSLATION_SERVICES, AVAILABLE_TRANSLATORS
 
-def test_delay_performance():
-    """Test translation performance with different delay settings."""
+def test_translation_services():
+    """Test different translation services and their performance."""
     
-    print("=== Translation Delay Performance Comparison ===")
+    print("=== Translation Services Comparison ===")
+    print(f"Available services: {TRANSLATION_SERVICES}")
+    print(f"Service status: {AVAILABLE_TRANSLATORS}")
     
     # Test phrases
     test_phrases = [
         "Hello world",
         "This is a test",
-        "The quick brown fox",
-        "micare provides excellent service",
-        "We offer high quality products"
+        "The quick brown fox"
     ]
     
-    # Test different delays (in seconds)
-    delay_settings = [
-        (0.001, "1ms"),    # Very fast
-        (0.005, "5ms"),    # Current optimized setting  
-        (0.010, "10ms"),   # User's suggested setting
-        (0.050, "50ms"),   # Original conservative setting
-    ]
+    # Test each available service individually by modifying config temporarily
+    import translator3000
+    original_config = translator3000.CONFIG['translation_services']
     
-    for delay_seconds, delay_name in delay_settings:
-        print(f"\n--- Testing with {delay_name} delay ---")
+    for service in ['libretranslate', 'deep_translator', 'googletrans']:
+        if not AVAILABLE_TRANSLATORS.get(service, False):
+            print(f"\n--- {service} (unavailable) ---")
+            continue
+            
+        print(f"\n--- Testing {service} ---")
         
-        # Create translator with specific delay
-        translator = CSVTranslator(
-            source_lang='en', 
-            target_lang='da', 
-            delay_between_requests=delay_seconds
-        )
+        try:
+            # Temporarily set config to use only this service
+            translator3000.CONFIG['translation_services'] = service
+            translator3000.TRANSLATION_SERVICES = [service]
+            
+            translator = CSVTranslator(
+                source_lang='en', 
+                target_lang='da'
+            )
+            
+            start_time = time.time()
+            
+            for i, phrase in enumerate(test_phrases, 1):
+                translated = translator.translate_text(phrase)
+                print(f"  {i}. '{phrase}' -> '{translated}'")
+            
+            total_time = time.time() - start_time
+            print(f"  Total time: {total_time:.3f}s")
+            print(f"  Rate: {len(test_phrases)/total_time:.1f} translations/sec")
+            
+        except Exception as e:
+            print(f"  ✗ {service} failed: {e}")
         
-        start_time = time.time()
+        finally:
+            # Restore original config
+            translator3000.CONFIG['translation_services'] = original_config
+            translator3000.TRANSLATION_SERVICES = translator3000.get_translation_services()
+
+def test_service_fallback():
+    """Test automatic fallback between services."""
+    
+    print("\n=== Service Fallback Test ===")
+    
+    try:
+        translator = CSVTranslator(source_lang='en', target_lang='da')
         
-        for i, phrase in enumerate(test_phrases, 1):
-            translated = translator.translate_text(phrase)
-            print(f"  {i}. '{phrase}' -> '{translated}'")
+        print(f"Translator has {len(translator.translators)} services configured:")
+        for i, (service_name, _) in enumerate(translator.translators, 1):
+            print(f"  {i}. {service_name}")
         
-        total_time = time.time() - start_time
-        avg_time = total_time / len(test_phrases)
+        # Test a simple phrase
+        test_text = "Automatic fallback test"
+        print(f"\nTesting: '{test_text}'")
+        translated = translator.translate_text(test_text)
+        print(f"Result: '{translated}'")
         
-        print(f"  Total time: {total_time:.3f}s")
-        print(f"  Average per translation: {avg_time:.3f}s")
-        print(f"  Rate: {len(test_phrases)/total_time:.1f} translations/sec")
+        print("✓ Fallback test completed successfully!")
+        
+    except Exception as e:
+        print(f"✗ Fallback test failed: {e}")
 
 if __name__ == "__main__":
-    test_delay_performance()
+    test_translation_services()
+    test_service_fallback()

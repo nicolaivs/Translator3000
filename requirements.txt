@@ -1,11 +1,14 @@
 # CSV Translation Script Dependencies
 # ===================================
 
-# Data manipulation and CSV handling
+# Core dependencies (required)
 pandas>=2.0.0
 
-# Translation libraries (try these in order of preference)
-# Option 1: More stable deep-translator library
+# Translation services (install any combination)
+# Option 1: LibreTranslate - Free, open-source, privacy-friendly (recommended)
+requests>=2.25.0
+
+# Option 2: More stable deep-translator library - Fast and reliable
 deep-translator>=1.9.0
 
 # Option 2: googletrans (fallback)

@@ -18,6 +18,7 @@ A powerful Python script for translating CSV file columns and XML text content b
 - 🔧 **Auto-Detection**: Automatically detects CSV delimiters and text columns
 - 📁 **Organized Workflow**: Automatic source/target folder management
 - ⚙️ **Configurable**: User-tunable performance settings via config file
+- 🔄 **Multi-Service Support**: deep-translator, googletrans, and LibreTranslate with automatic fallback
 
 ## Supported Languages
 
@@ -61,7 +62,20 @@ Translator3000/
    pip install -r requirements.txt
    ```
 
-   **Note**: If you encounter a `No module named 'cgi'` error with `googletrans`, don't worry! The script automatically uses the more reliable `deep-translator` library instead.
+   **Translation Service Options:**
+- **deep-translator** (recommended): Fast, reliable Google Translate wrapper
+  - Requires: `deep-translator` library
+  - Performance: ~4.6 translations/sec (fastest)
+- **googletrans**: Original Google Translate library
+  - Requires: `googletrans` library
+  - Performance: ~4.0 translations/sec (good)
+- **LibreTranslate** (privacy-focused): Free, open-source, privacy-friendly
+  - Requires: `requests` library
+  - API: Uses public LibreTranslate API (or self-hosted)
+  - Performance: ~1.0 translations/sec (slower, but private)
+  - Privacy: No data logging, EU-based
+
+The script automatically detects available libraries and uses them in order of performance: deep-translator → googletrans → LibreTranslate. Install any combination - the script will work with whatever is available!
 
 3. **Test your setup** (recommended):
    ```bash
@@ -170,6 +184,13 @@ The script includes a powerful configuration system via the `translator3000.conf
 - **Rate Limiting**: Built-in retry logic with exponential backoff
 - **Error Handling**: Graceful fallback to original text on translation failure
 
+### Translation Services
+
+- **Service Priority**: deep-translator → googletrans → LibreTranslate (performance-ordered)
+- **Automatic Fallback**: If one service fails, automatically tries the next
+- **LibreTranslate Config**: Supports custom API endpoints and API keys for privacy-focused users
+- **Performance First**: Fastest services prioritized, privacy options available as fallback
+
 ### Performance Improvements
 
 The script has been optimized for speed:
@@ -183,6 +204,9 @@ See `PERFORMANCE.md` for detailed benchmark results and tuning guidance.
 ### Customization Options
 
 Edit `translator3000.config` to adjust:
+- `translation_services`: Service priority order (deep_translator,googletrans,libretranslate)
+- `libretranslate_url`: LibreTranslate API endpoint (default: public API)
+- `libretranslate_api_key`: Optional API key for higher rate limits
 - `delay`: API request delay (5ms recommended)
 - `csv_max_workers`: Number of threads for CSV processing (4 recommended)
 - `xml_max_workers`: Number of threads for XML processing (4 recommended)

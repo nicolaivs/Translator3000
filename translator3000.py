@@ -691,13 +691,25 @@ def get_batch_processing_input() -> Dict[str, any]:
     print("  2. Batch mode (process all discovered files)")
     
     mode_choice = input("Enter choice (1 or 2, default: 1): ").strip()
-    
     if mode_choice == "2":
-        # Batch mode
-        print(f"\n[BATCH] Batch mode selected!")
-        print(f"All {total_files} files will be processed automatically.")
+        # Batch mode - allow folder selection
+        folder_choice = get_batch_folder_selection(discovered)
+        if not folder_choice:
+            return {}
         
-        # For batch mode, we need to handle CSV column selection differently
+        print(f"\n[BATCH] Batch mode selected!")
+        
+        # Calculate files to process based on selection
+        if folder_choice['type'] == 'root':
+            files_to_process = len(discovered['root_files'])
+            print(f"Processing {files_to_process} files from root directory.")
+        elif folder_choice['type'] == 'folder':
+            files_to_process = len(discovered['folders'][folder_choice['folder_name']])
+            print(f"Processing {files_to_process} files from folder: {folder_choice['folder_name']}")
+        elif folder_choice['type'] == 'all':
+            files_to_process = total_files
+            print(f"Processing all {files_to_process} files from all locations.")
+          # For batch mode, we need to handle CSV column selection differently
         if any(f.suffix.lower() == '.csv' for f in discovered['root_files']) or \
            any(any(f.suffix.lower() == '.csv' for f in files) for files in discovered['folders'].values()):
             print("\n[CSV] CSV Column Selection:")
@@ -707,6 +719,7 @@ def get_batch_processing_input() -> Dict[str, any]:
         return {
             'mode': 'batch',
             'discovered': discovered,
+            'folder_choice': folder_choice,
             'source_lang': lang_prefs['source_lang'],
             'target_lang': lang_prefs['target_lang'],
             'source_name': lang_prefs['source_name'],
@@ -882,7 +895,7 @@ def get_xml_input_single(selected_file: Path, input_file: str, output_dir: Path,
 
 def process_batch_files(params: Dict[str, any]) -> bool:
     """
-    Process all discovered files in batch mode.
+    Process selected files in batch mode based on folder choice.
     
     Args:
         params: Parameters from get_batch_processing_input()
@@ -891,6 +904,7 @@ def process_batch_files(params: Dict[str, any]) -> bool:
         True if all files processed successfully, False otherwise
     """
     discovered = params['discovered']
+    folder_choice = params['folder_choice']
     source_lang = params['source_lang']
     target_lang = params['target_lang']
     
@@ -901,60 +915,77 @@ def process_batch_files(params: Dict[str, any]) -> bool:
         delay_between_requests=0.1
     )
     
-    total_files = 0
     successful_files = 0
     failed_files = []
-      # Count total files
-    total_files = len(discovered['root_files'])
-    for files in discovered['folders'].values():
-        total_files += len(files)
     
-    print(f"\n[BATCH] Starting batch processing of {total_files} files...")
+    # Determine which files to process based on folder choice
+    files_to_process = []
+    
+    if folder_choice['type'] == 'root':
+        # Process only root files
+        for file_path in discovered['root_files']:
+            files_to_process.append((file_path, 'root'))
+        print(f"\n[BATCH] Processing {len(files_to_process)} files from root directory...")
+        
+    elif folder_choice['type'] == 'folder':
+        # Process only the selected folder
+        folder_name = folder_choice['folder_name']
+        for file_path in discovered['folders'][folder_name]:
+            files_to_process.append((file_path, folder_name))
+        print(f"\n[BATCH] Processing {len(files_to_process)} files from folder: {folder_name}")
+        
+    elif folder_choice['type'] == 'all':
+        # Process all files (original behavior)
+        for file_path in discovered['root_files']:
+            files_to_process.append((file_path, 'root'))
+        for folder_name, files in discovered['folders'].items():
+            for file_path in files:
+                files_to_process.append((file_path, folder_name))
+        print(f"\n[BATCH] Processing {len(files_to_process)} files from all locations...")
+    
+    if not files_to_process:
+        print("[WARNING] No files to process!")
+        return True
+    
     print(f"Language: {params['source_name']} -> {params['target_name']}")
     print()
     
-    current_file = 0
-    
-    # Process root files
-    for file_path in discovered['root_files']:
-        current_file += 1
-        print(f"[FILE] Processing file {current_file}/{total_files}: {file_path.name}")
-        
-        if process_single_file_batch(file_path, TARGET_DIR, translator, target_lang):
-            successful_files += 1
-            print(f"[SUCCESS] Successfully processed: {file_path.name}")
+    # Process the selected files
+    for current_file, (file_path, location) in enumerate(files_to_process, 1):
+        if location == 'root':
+            print(f"[FILE] Processing file {current_file}/{len(files_to_process)}: {file_path.name}")
+            output_dir = TARGET_DIR
         else:
-            failed_files.append(str(file_path))
-            print(f"[FAILED] Failed to process: {file_path.name}")
-        print()
-    
-    # Process folder files
-    for folder_name, files in discovered['folders'].items():
-        print(f"[FOLDER] Processing folder: {folder_name}/")
-        
-        # Create target subfolder
-        target_subfolder = TARGET_DIR / folder_name
-        target_subfolder.mkdir(parents=True, exist_ok=True)
-        print(f"[FOLDER] Created target folder: {target_subfolder}")
-        
-        for file_path in files:
-            current_file += 1
             relative_path = file_path.relative_to(SOURCE_DIR)
-            print(f"[FILE] Processing file {current_file}/{total_files}: {relative_path}")
-            
-            if process_single_file_batch(file_path, target_subfolder, translator, target_lang):
-                successful_files += 1
-                print(f"[SUCCESS] Successfully processed: {relative_path}")
+            print(f"[FILE] Processing file {current_file}/{len(files_to_process)}: {relative_path}")
+            # Create target subfolder
+            output_dir = TARGET_DIR / location
+            output_dir.mkdir(parents=True, exist_ok=True)
+            if current_file == 1 or location not in [loc for _, loc in files_to_process[:current_file-1]]:
+                print(f"[FOLDER] Created target folder: {output_dir}")
+        
+        if process_single_file_batch(file_path, output_dir, translator, target_lang):
+            successful_files += 1
+            if location == 'root':
+                print(f"[SUCCESS] Successfully processed: {file_path.name}")
             else:
+                relative_path = file_path.relative_to(SOURCE_DIR)
+                print(f"[SUCCESS] Successfully processed: {relative_path}")
+        else:
+            if location == 'root':
+                failed_files.append(str(file_path.name))
+                print(f"[FAILED] Failed to process: {file_path.name}")
+            else:
+                relative_path = file_path.relative_to(SOURCE_DIR)
                 failed_files.append(str(relative_path))
                 print(f"[FAILED] Failed to process: {relative_path}")
-            print()
+        print()
     
     # Print summary
     print("=" * 60)
     print("[SUMMARY] BATCH PROCESSING SUMMARY")
     print("=" * 60)
-    print(f"Total files: {total_files}")
+    print(f"Total files: {len(files_to_process)}")
     print(f"Successfully processed: {successful_files}")
     print(f"Failed: {len(failed_files)}")
     
@@ -1081,6 +1112,67 @@ def process_xml_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTr
     except Exception as e:
         logger.error(f"Error processing XML file {file_path}: {e}")
         return False
+
+def get_batch_folder_selection(discovered: Dict[str, List[Path]]) -> Dict[str, any]:
+    """
+    Allow user to select which folder to batch process.
+    
+    Args:
+        discovered: Dictionary from discover_files_and_folders()
+        
+    Returns:
+        Dictionary with selection info: {'type': 'root'|'folder'|'all', 'folder_name': str}
+    """
+    options = []
+    
+    # Add root option if there are root files
+    if discovered['root_files']:
+        options.append(('root', f"Root directory only ({len(discovered['root_files'])} files)"))
+    
+    # Add individual folder options
+    for folder_name, files in discovered['folders'].items():
+        options.append(('folder', f"Folder '{folder_name}' only ({len(files)} files)", folder_name))
+    
+    # Add "all" option if there are both root files and folders
+    if discovered['root_files'] and discovered['folders']:
+        total_files = len(discovered['root_files']) + sum(len(files) for files in discovered['folders'].values())
+        options.append(('all', f"All files and folders ({total_files} files total)"))
+    
+    if not options:
+        print("No files available for batch processing.")
+        return {}
+    
+    print("\nChoose what to batch process:")
+    for i, option in enumerate(options, 1):
+        if len(option) == 2:  # root or all
+            print(f"  {i}. {option[1]}")
+        else:  # specific folder
+            print(f"  {i}. {option[1]}")
+    
+    while True:
+        try:
+            choice = input(f"Enter choice (1-{len(options)}): ").strip()
+            choice_idx = int(choice) - 1
+            if 0 <= choice_idx < len(options):
+                selected_option = options[choice_idx]
+                
+                if selected_option[0] == 'root':
+                    print(f"Selected: Root directory only")
+                    return {'type': 'root'}
+                elif selected_option[0] == 'folder':
+                    folder_name = selected_option[2]
+                    print(f"Selected: Folder '{folder_name}' only")
+                    return {'type': 'folder', 'folder_name': folder_name}
+                elif selected_option[0] == 'all':
+                    print(f"Selected: All files and folders")
+                    return {'type': 'all'}
+                break
+            else:
+                print(f"Invalid choice! Please enter a number between 1-{len(options)}.")
+        except ValueError:
+            print("Invalid input! Please enter a number.")
+    
+    return {}
 
 def main():
     """Main function to run the Translator3000 - Multi-Language CSV & XML Translation Script."""

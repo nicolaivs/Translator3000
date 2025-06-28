@@ -8,7 +8,7 @@ A powerful Python script for translating CSV file columns and XML text content b
 - 🔄 **Dynamic Language Selection**: Choose source and target languages at runtime
 - 📊 **CSV Processing**: Reads and processes CSV files with pandas
 - 🏷️ **XML Processing**: Translates XML text content while preserving structure and attributes
-- 🚀 **Batch Processing**: Process entire folders with multiple files automatically
+- 🚀 **Selective Batch Processing**: Choose to process root files only, specific folders only, or everything
 - 📁 **Recursive Folder Support**: Scans subdirectories and creates matching target structure
 - 🔄 **Batch Translation**: Translates multiple columns efficiently
 - 📝 **Preserves Data**: Keeps original columns/structure and adds translated versions
@@ -79,7 +79,10 @@ Translator3000/
 3. **Select your languages** (source language of your data, target language for translation)
 4. **Choose processing mode**:
    - **Single file mode**: Select one specific file to translate
-   - **Batch mode**: Process all discovered files automatically
+   - **Batch mode**: Choose which files to process automatically:
+     - **Root directory only**: Process only files in the main source folder
+     - **Specific folder only**: Process only files in one selected subfolder  
+     - **All files and folders**: Process everything (original batch behavior)
 5. **Follow the prompts** to select columns for CSV files (automatic detection in batch mode)
 6. **Find your translated files** in the `target/` folder with matching directory structure
 

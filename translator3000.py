@@ -675,6 +675,8 @@ class CSVTranslator:
             # Mixed case - return replacement as-is
             return replacement
 
+
+
 def get_language_suffix(lang_code: str) -> str:
     """Generate a column suffix based on language code."""
     # Create a mapping for cleaner suffixes
@@ -691,6 +693,55 @@ def get_language_suffix(lang_code: str) -> str:
         'sv': '_swedish'
     }
     return suffix_mapping.get(lang_code, f'_{lang_code}')
+
+def get_language_name(lang_code: str) -> str:
+    """Get the full language name for a language code."""
+    return SUPPORTED_LANGUAGES.get(lang_code, lang_code)
+
+def generate_output_filename(input_filename: str, lang_code: str, is_root_file: bool = True) -> str:
+    """
+    Generate output filename based on location and language.
+    
+    Args:
+        input_filename: Original filename with extension
+        lang_code: Target language code (e.g., 'sv', 'da')
+        is_root_file: True if processing root file, False if in subfolder
+        
+    Returns:
+        New filename with language suffix
+    """
+    path = Path(input_filename)
+    stem = path.stem
+    extension = path.suffix
+    
+    if is_root_file:
+        # For root files: "filename - Language.ext"
+        language_name = get_language_name(lang_code)
+        return f"{stem} - {language_name}{extension}"
+    else:
+        # For batch subfolder files: keep original name
+        return input_filename
+
+def generate_output_directory(base_dir: Path, folder_name: str, lang_code: str, is_batch_folder: bool = False) -> Path:
+    """
+    Generate output directory path based on processing mode.
+    
+    Args:
+        base_dir: Base target directory
+        folder_name: Name of the source folder (or 'root')
+        lang_code: Target language code
+        is_batch_folder: True if processing a batch folder (not root)
+        
+    Returns:
+        Target directory path
+    """
+    if folder_name == 'root' or not is_batch_folder:
+        # For root files, use base target directory
+        return base_dir
+    else:
+        # For batch folders: "foldername - Language"
+        language_name = get_language_name(lang_code)
+        return base_dir / f"{folder_name} - {language_name}"
 
 def get_language_preferences() -> Dict[str, str]:
     """Get source and target language preferences from user."""
@@ -1020,9 +1071,8 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
     except ValueError:
         print("Invalid input! Please enter numbers separated by commas.")
         return {}
-    
-    # Generate output file path
-    output_filename = selected_file.stem + '_translated.csv'
+      # Generate output file path with new naming convention
+    output_filename = generate_output_filename(selected_file.name, lang_prefs['target_lang'], is_root_file=True)
     output_file = str(output_dir / output_filename)
     print(f"\nOutput will be saved to: {output_file}")
     
@@ -1043,9 +1093,8 @@ def get_xml_input_single(selected_file: Path, input_file: str, output_dir: Path,
     """Get XML-specific input parameters for single file mode."""
     print(f"\nXML file selected: {selected_file.name}")
     print("XML translation will translate all text content while preserving structure and attributes.")
-    
-    # Generate output file path
-    output_filename = selected_file.stem + '_translated.xml'
+      # Generate output file path with new naming convention
+    output_filename = generate_output_filename(selected_file.name, lang_prefs['target_lang'], is_root_file=True)
     output_file = str(output_dir / output_filename)
     print(f"Output will be saved to: {output_file}")
     
@@ -1116,22 +1165,23 @@ def process_batch_files(params: Dict[str, any]) -> bool:
     
     print(f"Language: {params['source_name']} -> {params['target_name']}")
     print()
-    
-    # Process the selected files
+      # Process the selected files
     for current_file, (file_path, location) in enumerate(files_to_process, 1):
         if location == 'root':
             print(f"[FILE] Processing file {current_file}/{len(files_to_process)}: {file_path.name}")
             output_dir = TARGET_DIR
+            is_root_file = True
         else:
             relative_path = file_path.relative_to(SOURCE_DIR)
             print(f"[FILE] Processing file {current_file}/{len(files_to_process)}: {relative_path}")
-            # Create target subfolder
-            output_dir = TARGET_DIR / location
+            # Create target subfolder with language suffix
+            output_dir = generate_output_directory(TARGET_DIR, location, target_lang, is_batch_folder=True)
             output_dir.mkdir(parents=True, exist_ok=True)
+            is_root_file = False
             if current_file == 1 or location not in [loc for _, loc in files_to_process[:current_file-1]]:
                 print(f"[FOLDER] Created target folder: {output_dir}")
         
-        if process_single_file_batch(file_path, output_dir, translator, target_lang):
+        if process_single_file_batch(file_path, output_dir, translator, target_lang, is_root_file):
             successful_files += 1
             if location == 'root':
                 print(f"[SUCCESS] Successfully processed: {file_path.name}")
@@ -1167,7 +1217,7 @@ def process_batch_files(params: Dict[str, any]) -> bool:
     
     return len(failed_files) == 0
 
-def process_single_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTranslator', target_lang: str) -> bool:
+def process_single_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTranslator', target_lang: str, is_root_file: bool = False) -> bool:
     """
     Process a single file in batch mode.
     
@@ -1176,6 +1226,7 @@ def process_single_file_batch(file_path: Path, output_dir: Path, translator: 'CS
         output_dir: Directory where output should be saved
         translator: Configured translator instance
         target_lang: Target language code
+        is_root_file: True if processing a root file, False if in subfolder
         
     Returns:
         True if successful, False otherwise
@@ -1184,9 +1235,9 @@ def process_single_file_batch(file_path: Path, output_dir: Path, translator: 'CS
         file_type = file_path.suffix.lower()
         
         if file_type == '.csv':
-            return process_csv_file_batch(file_path, output_dir, translator, target_lang)
+            return process_csv_file_batch(file_path, output_dir, translator, target_lang, is_root_file)
         elif file_type == '.xml':
-            return process_xml_file_batch(file_path, output_dir, translator)
+            return process_xml_file_batch(file_path, output_dir, translator, target_lang, is_root_file)
         else:
             logger.error(f"Unsupported file type: {file_type}")
             return False
@@ -1195,7 +1246,7 @@ def process_single_file_batch(file_path: Path, output_dir: Path, translator: 'CS
         logger.error(f"Error processing file {file_path}: {e}")
         return False
 
-def process_csv_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTranslator', target_lang: str) -> bool:
+def process_csv_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTranslator', target_lang: str, is_root_file: bool = False) -> bool:
     """Process a single CSV file in batch mode."""
     try:
         # Try different delimiters to determine the correct one
@@ -1239,11 +1290,11 @@ def process_csv_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTr
         
         logger.info(f"Auto-selected columns for translation: {text_columns}")
         
-        # Generate output file path
-        output_filename = file_path.stem + '_translated.csv'
+        # Generate output file path with new naming convention
+        output_filename = generate_output_filename(file_path.name, target_lang, is_root_file)
         output_file = output_dir / output_filename
         
-        # Generate language-specific suffix
+        # Generate language-specific suffix for columns
         language_suffix = get_language_suffix(target_lang)
         
         # Translate the CSV
@@ -1261,11 +1312,11 @@ def process_csv_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTr
         logger.error(f"Error processing CSV file {file_path}: {e}")
         return False
 
-def process_xml_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTranslator') -> bool:
+def process_xml_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTranslator', target_lang: str, is_root_file: bool = False) -> bool:
     """Process a single XML file in batch mode."""
     try:
-        # Generate output file path
-        output_filename = file_path.stem + '_translated.xml'
+        # Generate output file path with new naming convention
+        output_filename = generate_output_filename(file_path.name, target_lang, is_root_file)
         output_file = output_dir / output_filename
         
         # Translate the XML

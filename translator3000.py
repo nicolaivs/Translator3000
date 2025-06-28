@@ -124,12 +124,15 @@ class CSVTranslator:
         # Initialize the appropriate translator
         if TRANSLATOR_TYPE == "deep_translator":
             # For deep_translator, we create a translator instance with specific languages
-            self.translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)
+            self.translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)        
         elif TRANSLATOR_TYPE == "googletrans":
             # For googletrans, we create a generic translator instance
             self.translator = Translator()
         else:
             raise ImportError("No valid translator found")
+        
+        # Load glossary for custom translations
+        self.glossary = self._load_glossary()
         
     def translate_text(self, text: str) -> str:
         """
@@ -557,6 +560,114 @@ class CSVTranslator:
         result = re.sub(pattern, replace_with_cdata, xml_str, flags=re.DOTALL)
         
         return result
+
+    def _load_glossary(self) -> Dict[str, Dict[str, str]]:
+        """
+        Load the glossary CSV file for custom translation terms.
+        
+        Returns:
+            Dictionary mapping source terms to target terms and case preferences
+        """
+        glossary = {}
+        glossary_file = PROJECT_ROOT / "glossary.csv"
+        
+        if not glossary_file.exists():
+            logger.info("No glossary.csv file found. Using translation API only.")
+            return glossary
+        
+        try:
+            # Read the glossary CSV
+            with open(glossary_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Skip header and empty lines
+            for line_num, line in enumerate(lines[1:], 2):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                parts = line.split(';')
+                if len(parts) != 3:
+                    logger.warning(f"Glossary line {line_num} has wrong format (expected 3 columns): {line}")
+                    continue
+                
+                source_term, target_term, keep_case = parts
+                source_term = source_term.strip()
+                target_term = target_term.strip()
+                keep_case = keep_case.strip().lower() == 'true'
+                
+                if source_term and target_term:
+                    glossary[source_term.lower()] = {
+                        'target': target_term,
+                        'keep_case': keep_case
+                    }
+            
+            if glossary:
+                logger.info(f"Loaded {len(glossary)} terms from glossary.csv")
+            else:
+                logger.info("Glossary.csv file is empty or contains no valid entries")
+                
+        except Exception as e:
+            logger.warning(f"Error loading glossary.csv: {e}")
+        
+        return glossary
+    
+    def _apply_glossary_replacements(self, text: str) -> str:
+        """
+        Apply glossary replacements to text before translation.
+        
+        Args:
+            text: Text to process
+            
+        Returns:
+            Text with glossary terms replaced
+        """
+        if not hasattr(self, 'glossary') or not self.glossary:
+            return text
+        
+        result = text
+        
+        for source_term, config in self.glossary.items():
+            target_term = config['target']
+            keep_case = config['keep_case']
+            
+            # Create case-insensitive pattern for whole words
+            pattern = re.compile(r'\b' + re.escape(source_term) + r'\b', re.IGNORECASE)
+            
+            def replace_match(match):
+                matched_text = match.group(0)
+                
+                if keep_case:
+                    # Preserve the case pattern of the original match
+                    return self._preserve_case(matched_text, target_term)
+                else:
+                    # Use target term as-is
+                    return target_term
+            
+            result = pattern.sub(replace_match, result)
+        
+        return result
+    
+    def _preserve_case(self, original: str, replacement: str) -> str:
+        """
+        Preserve the case pattern of the original word when applying replacement.
+        
+        Args:
+            original: Original word with case pattern to preserve
+            replacement: Replacement word
+            
+        Returns:
+            Replacement word with case pattern of original
+        """
+        if original.isupper():
+            return replacement.upper()
+        elif original.islower():
+            return replacement.lower()
+        elif original.istitle():
+            return replacement.capitalize()
+        else:
+            # Mixed case - return replacement as-is
+            return replacement
 
 def get_language_suffix(lang_code: str) -> str:
     """Generate a column suffix based on language code."""

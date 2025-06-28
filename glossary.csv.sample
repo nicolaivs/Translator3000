@@ -1,0 +1,11 @@
+source;target;keep_case
+ajax;AJAX;False
+javascript;JavaScript;True
+api;API;False
+json;JSON;False
+html;HTML;False
+css;CSS;False
+sql;SQL;False
+xml;XML;False
+url;URL;False
+uuid;UUID;False

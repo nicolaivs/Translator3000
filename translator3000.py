@@ -96,7 +96,7 @@ except ImportError:
 class CSVTranslator:
     """A class to handle CSV file translation between different languages."""
     
-    def __init__(self, source_lang: str = 'en', target_lang: str = 'nl', delay_between_requests: float = 0.1):
+    def __init__(self, source_lang: str = 'en', target_lang: str = 'nl', delay_between_requests: float = 0.05):
         """
         Initialize the CSV translator.
         
@@ -356,12 +356,70 @@ class CSVTranslator:
                     if prefix:
                         translated = self._translate_plain_text(prefix) + html_text[first_tag_pos:]
             
-            return translated
-            
+            return translated            
         except Exception as e:
             logger.warning(f"Regex HTML parsing failed: {e}")
             return html_text
     
+    def _translate_with_retry(self, text: str, max_retries: int = 3, base_delay: float = 0.05) -> str:
+        """
+        Translate text with exponential backoff retry mechanism.
+        
+        Args:
+            text: Text to translate
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay in seconds (will increase with each retry)
+            
+        Returns:
+            Translated text
+        """
+        if not text or len(text.strip()) <= 1:
+            return text
+            
+        text_clean = text.strip()
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):  # +1 for initial attempt
+            try:
+                # Translate using the appropriate library
+                if TRANSLATOR_TYPE == "deep_translator":
+                    translated = self.translator.translate(text_clean)
+                elif TRANSLATOR_TYPE == "googletrans":
+                    result = self.translator.translate(
+                        text_clean, 
+                        src=self.source_lang, 
+                        dest=self.target_lang
+                    )
+                    translated = result.text
+                else:
+                    return text
+                
+                # Success! Add minimal delay and return
+                if attempt == 0:
+                    # First attempt - use minimal delay
+                    time.sleep(base_delay)
+                else:
+                    # Retry succeeded - use slightly longer delay to be respectful
+                    time.sleep(base_delay * 2)
+                    logger.debug(f"Translation succeeded on attempt {attempt + 1}")
+                
+                return translated
+                
+            except Exception as e:
+                last_exception = e
+                
+                if attempt < max_retries:
+                    # Calculate exponential backoff delay
+                    retry_delay = base_delay * (2 ** attempt) + (0.05 * attempt)  # 50ms extra per retry
+                    logger.debug(f"Translation attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
+                    time.sleep(retry_delay)
+                else:
+                    # All retries exhausted
+                    logger.warning(f"Translation failed after {max_retries + 1} attempts for '{text[:50]}...': {last_exception}")
+        
+        # If we get here, all attempts failed
+        return text
+
     def _translate_plain_text(self, text: str) -> str:
         """
         Translate plain text without HTML.
@@ -675,7 +733,1121 @@ class CSVTranslator:
             # Mixed case - return replacement as-is
             return replacement
 
+    def _translate_with_retry(self, text: str, max_retries: int = 3, base_delay: float = 0.05) -> str:
+        """
+        Translate text with exponential backoff retry mechanism.
+        
+        Args:
+            text: Text to translate
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay in seconds (will increase with each retry)
+            
+        Returns:
+            Translated text
+        """
+        if not text or len(text.strip()) <= 1:
+            return text
+            
+        text_clean = text.strip()
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):  # +1 for initial attempt
+            try:
+                # Translate using the appropriate library
+                if TRANSLATOR_TYPE == "deep_translator":
+                    translated = self.translator.translate(text_clean)
+                elif TRANSLATOR_TYPE == "googletrans":
+                    result = self.translator.translate(
+                        text_clean, 
+                        src=self.source_lang, 
+                        dest=self.target_lang
+                    )
+                    translated = result.text
+                else:
+                    return text
+                
+                # Success! Add minimal delay and return
+                if attempt == 0:
+                    # First attempt - use minimal delay
+                    time.sleep(base_delay)
+                else:
+                    # Retry succeeded - use slightly longer delay to be respectful
+                    time.sleep(base_delay * 2)
+                    logger.debug(f"Translation succeeded on attempt {attempt + 1}")
+                
+                return translated
+                
+            except Exception as e:
+                last_exception = e
+                
+                if attempt < max_retries:
+                    # Calculate exponential backoff delay
+                    retry_delay = base_delay * (2 ** attempt) + (0.05 * attempt)  # 50ms extra per retry
+                    logger.debug(f"Translation attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
+                    time.sleep(retry_delay)
+                else:
+                    # All retries exhausted
+                    logger.warning(f"Translation failed after {max_retries + 1} attempts for '{text[:50]}...': {last_exception}")
+        
+        # If we get here, all attempts failed
+        return text
 
+    def _translate_plain_text(self, text: str) -> str:
+        """
+        Translate plain text without HTML.
+        
+        Args:
+            text: Plain text to translate
+            
+        Returns:
+            Translated text
+        """
+        if not text or len(text.strip()) <= 1:
+            return text
+            
+        try:
+            text_clean = text.strip()
+              # Translate using the appropriate library
+            if TRANSLATOR_TYPE == "deep_translator":
+                # deep_translator: translator was initialized with languages, so only pass text
+                translated = self.translator.translate(text_clean)
+            elif TRANSLATOR_TYPE == "googletrans":
+                # googletrans: generic translator, so pass text and language parameters
+                result = self.translator.translate(
+                    text_clean, 
+                    src=self.source_lang, 
+                    dest=self.target_lang
+                )
+                translated = result.text
+            else:
+                return text
+                
+            # Add delay to avoid rate limiting
+            time.sleep(self.delay)
+            
+            return translated
+            
+        except Exception as e:
+            logger.warning(f"Plain text translation failed for '{text}': {e}")
+            return text
+
+    def translate_xml(self, input_file: str, output_file: str) -> bool:
+        """
+        Translate text content in XML file while preserving structure and attributes.
+        
+        Args:
+            input_file: Path to input XML file
+            output_file: Path to output XML file
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.info(f"Reading XML file: {input_file}")
+            
+            # Parse the XML file
+            tree = ET.parse(input_file)
+            root = tree.getroot()
+            
+            # Count total text elements for progress tracking
+            total_elements = self._count_text_elements(root)
+            logger.info(f"Found {total_elements} text elements to translate")
+            
+            # Translate all text content recursively
+            translated_count = self._translate_xml_element(root, 0, total_elements)
+            
+            # Save the translated XML
+            logger.info(f"Saving translated XML to: {output_file}")
+            self._save_xml_pretty(tree, output_file)
+            
+            logger.info(f"XML translation completed successfully!")
+            logger.info(f"Translated {translated_count} text elements")
+            
+            return True
+            
+        except ET.ParseError as e:
+            logger.error(f"XML parsing error: {e}")
+            return False
+        except FileNotFoundError:
+            logger.error(f"Input file not found: {input_file}")
+            return False
+        except Exception as e:
+            logger.error(f"Error during XML translation: {e}")
+            return False
+    
+    def _count_text_elements(self, element) -> int:
+        """Count elements with text content for progress tracking."""
+        count = 0
+        if element.text and element.text.strip():
+            count += 1
+        if element.tail and element.tail.strip():
+            count += 1
+        for child in element:
+            count += self._count_text_elements(child)
+        return count
+    
+    def _translate_xml_element(self, element, current_count: int, total_count: int) -> int:
+        """
+        Recursively translate text content in XML elements.
+        
+        Args:
+            element: XML element to process
+            current_count: Current progress count
+            total_count: Total elements to process
+            
+        Returns:
+            Updated count of processed elements
+        """
+        processed_count = current_count
+        
+        # Translate element text content
+        if element.text and element.text.strip():
+            processed_count += 1
+            if processed_count % 10 == 0:  # Progress update every 10 elements
+                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
+            
+            original_text = element.text.strip()
+            translated_text = self.translate_text(original_text)
+            
+            # Preserve whitespace structure
+            if element.text.startswith(' ') or element.text.startswith('\n'):
+                element.text = element.text.replace(original_text, translated_text)
+            else:
+                element.text = translated_text
+        
+        # Translate tail text (text after closing tag)
+        if element.tail and element.tail.strip():
+            processed_count += 1
+            if processed_count % 10 == 0:
+                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
+            
+            original_tail = element.tail.strip()
+            translated_tail = self.translate_text(original_tail)
+            
+            # Preserve whitespace structure
+            if element.tail.startswith(' ') or element.tail.startswith('\n'):
+                element.tail = element.tail.replace(original_tail, translated_tail)
+            else:
+                element.tail = translated_tail
+          # Recursively process child elements
+        for child in element:
+            processed_count = self._translate_xml_element(child, processed_count, total_count)
+        
+        return processed_count
+    
+    def _save_xml_pretty(self, tree, output_file: str):
+        """Save XML with pretty formatting and CDATA preservation for HTML content."""
+        # Convert to string
+        xml_str = ET.tostring(tree.getroot(), encoding='unicode')
+        
+        # Restore CDATA sections for HTML content
+        xml_str = self._restore_cdata_for_html_content(xml_str)
+          # Parse with minidom for pretty printing
+        try:
+            dom = minidom.parseString(xml_str)
+            # Get pretty formatted XML with 4-space indentation to match original
+            pretty_xml = dom.toprettyxml(indent="    ")
+            
+            # Clean up extra blank lines that minidom adds
+            lines = []
+            for line in pretty_xml.split('\n'):
+                line = line.rstrip()  # Remove trailing whitespace
+                if line.strip():  # Only keep non-empty lines
+                    lines.append(line)
+            
+            # Save with pretty formatting
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines) + '\n')
+        except Exception as e:
+            logger.warning(f"Error pretty-printing XML: {e}. Writing raw XML.")
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+                f.write(xml_str)
+    
+    def _restore_cdata_for_html_content(self, xml_str: str) -> str:
+        """Restore CDATA sections for content that contains HTML tags."""
+        import re
+        
+        # Look for content that has HTML entities (indicating original HTML/CDATA content)
+        # Pattern to match element content that contains HTML entities
+        pattern = r'(<([^>]+)>)([^<]*(?:&(?:lt|gt|amp|quot|apos);[^<]*)+)</\2>'
+        
+        def replace_with_cdata(match):
+            opening_tag = match.group(1)
+            tag_name = match.group(2)
+            content = match.group(3)
+            closing_tag = f'</{tag_name}>'
+            
+            # Unescape HTML entities
+            unescaped_content = (content
+                                .replace('&lt;', '<')
+                                .replace('&gt;', '>')
+                                .replace('&amp;', '&')
+                                .replace('&quot;', '"')
+                                .replace('&apos;', "'"))
+            
+            # If the unescaped content contains HTML tags, wrap in CDATA
+            if '<' in unescaped_content and '>' in unescaped_content:
+                return f'{opening_tag}<![CDATA[{unescaped_content}]]>{closing_tag}'
+            
+            return match.group(0)
+        
+        # Apply the replacement
+        result = re.sub(pattern, replace_with_cdata, xml_str, flags=re.DOTALL)
+        
+        return result
+
+    def _load_glossary(self) -> Dict[str, Dict[str, str]]:
+        """
+        Load the glossary CSV file for custom translation terms.
+        
+        Returns:
+            Dictionary mapping source terms to target terms and case preferences
+        """
+        glossary = {}
+        glossary_file = PROJECT_ROOT / "glossary.csv"
+        
+        if not glossary_file.exists():
+            logger.info("No glossary.csv file found. Using translation API only.")
+            return glossary
+        
+        try:
+            # Read the glossary CSV
+            with open(glossary_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Skip header and empty lines
+            for line_num, line in enumerate(lines[1:], 2):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                parts = line.split(';')
+                if len(parts) != 3:
+                    logger.warning(f"Glossary line {line_num} has wrong format (expected 3 columns): {line}")
+                    continue
+                
+                source_term, target_term, keep_case = parts
+                source_term = source_term.strip()
+                target_term = target_term.strip()
+                keep_case = keep_case.strip().lower() == 'true'
+                
+                if source_term and target_term:
+                    glossary[source_term.lower()] = {
+                        'target': target_term,
+                        'keep_case': keep_case
+                    }
+            
+            if glossary:
+                logger.info(f"Loaded {len(glossary)} terms from glossary.csv")
+            else:
+                logger.info("Glossary.csv file is empty or contains no valid entries")
+                
+        except Exception as e:
+            logger.warning(f"Error loading glossary.csv: {e}")
+        
+        return glossary
+    
+    def _apply_glossary_replacements(self, text: str) -> str:
+        """
+        Apply glossary replacements to text before translation.
+        
+        Args:
+            text: Text to process
+            
+        Returns:
+            Text with glossary terms replaced
+        """
+        if not hasattr(self, 'glossary') or not self.glossary:
+            return text
+        
+        result = text
+        
+        for source_term, config in self.glossary.items():
+            target_term = config['target']
+            keep_case = config['keep_case']
+            
+            # Create case-insensitive pattern for whole words
+            pattern = re.compile(r'\b' + re.escape(source_term) + r'\b', re.IGNORECASE)
+            
+            def replace_match(match):
+                matched_text = match.group(0)
+                
+                if keep_case:
+                    # Preserve the case pattern of the original match
+                    return self._preserve_case(matched_text, target_term)
+                else:
+                    # Use target term as-is
+                    return target_term
+            
+            result = pattern.sub(replace_match, result)
+        
+        return result
+    
+    def _preserve_case(self, original: str, replacement: str) -> str:
+        """
+        Preserve the case pattern of the original word when applying replacement.
+        
+        Args:
+            original: Original word with case pattern to preserve
+            replacement: Replacement word
+            
+        Returns:
+            Replacement word with case pattern of original
+        """
+        if original.isupper():
+            return replacement.upper()
+        elif original.islower():
+            return replacement.lower()
+        elif original.istitle():
+            return replacement.capitalize()
+        else:
+            # Mixed case - return replacement as-is
+            return replacement
+
+    def _translate_with_retry(self, text: str, max_retries: int = 3, base_delay: float = 0.05) -> str:
+        """
+        Translate text with exponential backoff retry mechanism.
+        
+        Args:
+            text: Text to translate
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay in seconds (will increase with each retry)
+            
+        Returns:
+            Translated text
+        """
+        if not text or len(text.strip()) <= 1:
+            return text
+            
+        text_clean = text.strip()
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):  # +1 for initial attempt
+            try:
+                # Translate using the appropriate library
+                if TRANSLATOR_TYPE == "deep_translator":
+                    translated = self.translator.translate(text_clean)
+                elif TRANSLATOR_TYPE == "googletrans":
+                    result = self.translator.translate(
+                        text_clean, 
+                        src=self.source_lang, 
+                        dest=self.target_lang
+                    )
+                    translated = result.text
+                else:
+                    return text
+                
+                # Success! Add minimal delay and return
+                if attempt == 0:
+                    # First attempt - use minimal delay
+                    time.sleep(base_delay)
+                else:
+                    # Retry succeeded - use slightly longer delay to be respectful
+                    time.sleep(base_delay * 2)
+                    logger.debug(f"Translation succeeded on attempt {attempt + 1}")
+                
+                return translated
+                
+            except Exception as e:
+                last_exception = e
+                
+                if attempt < max_retries:
+                    # Calculate exponential backoff delay
+                    retry_delay = base_delay * (2 ** attempt) + (0.05 * attempt)  # 50ms extra per retry
+                    logger.debug(f"Translation attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
+                    time.sleep(retry_delay)
+                else:
+                    # All retries exhausted
+                    logger.warning(f"Translation failed after {max_retries + 1} attempts for '{text[:50]}...': {last_exception}")
+        
+        # If we get here, all attempts failed
+        return text
+
+    def _translate_plain_text(self, text: str) -> str:
+        """
+        Translate plain text without HTML.
+        
+        Args:
+            text: Plain text to translate
+            
+        Returns:
+            Translated text
+        """
+        if not text or len(text.strip()) <= 1:
+            return text
+            
+        try:
+            text_clean = text.strip()
+              # Translate using the appropriate library
+            if TRANSLATOR_TYPE == "deep_translator":
+                # deep_translator: translator was initialized with languages, so only pass text
+                translated = self.translator.translate(text_clean)
+            elif TRANSLATOR_TYPE == "googletrans":
+                # googletrans: generic translator, so pass text and language parameters
+                result = self.translator.translate(
+                    text_clean, 
+                    src=self.source_lang, 
+                    dest=self.target_lang
+                )
+                translated = result.text
+            else:
+                return text
+                
+            # Add delay to avoid rate limiting
+            time.sleep(self.delay)
+            
+            return translated
+            
+        except Exception as e:
+            logger.warning(f"Plain text translation failed for '{text}': {e}")
+            return text
+
+    def translate_xml(self, input_file: str, output_file: str) -> bool:
+        """
+        Translate text content in XML file while preserving structure and attributes.
+        
+        Args:
+            input_file: Path to input XML file
+            output_file: Path to output XML file
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.info(f"Reading XML file: {input_file}")
+            
+            # Parse the XML file
+            tree = ET.parse(input_file)
+            root = tree.getroot()
+            
+            # Count total text elements for progress tracking
+            total_elements = self._count_text_elements(root)
+            logger.info(f"Found {total_elements} text elements to translate")
+            
+            # Translate all text content recursively
+            translated_count = self._translate_xml_element(root, 0, total_elements)
+            
+            # Save the translated XML
+            logger.info(f"Saving translated XML to: {output_file}")
+            self._save_xml_pretty(tree, output_file)
+            
+            logger.info(f"XML translation completed successfully!")
+            logger.info(f"Translated {translated_count} text elements")
+            
+            return True
+            
+        except ET.ParseError as e:
+            logger.error(f"XML parsing error: {e}")
+            return False
+        except FileNotFoundError:
+            logger.error(f"Input file not found: {input_file}")
+            return False
+        except Exception as e:
+            logger.error(f"Error during XML translation: {e}")
+            return False
+    
+    def _count_text_elements(self, element) -> int:
+        """Count elements with text content for progress tracking."""
+        count = 0
+        if element.text and element.text.strip():
+            count += 1
+        if element.tail and element.tail.strip():
+            count += 1
+        for child in element:
+            count += self._count_text_elements(child)
+        return count
+    
+    def _translate_xml_element(self, element, current_count: int, total_count: int) -> int:
+        """
+        Recursively translate text content in XML elements.
+        
+        Args:
+            element: XML element to process
+            current_count: Current progress count
+            total_count: Total elements to process
+            
+        Returns:
+            Updated count of processed elements
+        """
+        processed_count = current_count
+        
+        # Translate element text content
+        if element.text and element.text.strip():
+            processed_count += 1
+            if processed_count % 10 == 0:  # Progress update every 10 elements
+                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
+            
+            original_text = element.text.strip()
+            translated_text = self.translate_text(original_text)
+            
+            # Preserve whitespace structure
+            if element.text.startswith(' ') or element.text.startswith('\n'):
+                element.text = element.text.replace(original_text, translated_text)
+            else:
+                element.text = translated_text
+        
+        # Translate tail text (text after closing tag)
+        if element.tail and element.tail.strip():
+            processed_count += 1
+            if processed_count % 10 == 0:
+                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
+            
+            original_tail = element.tail.strip()
+            translated_tail = self.translate_text(original_tail)
+            
+            # Preserve whitespace structure
+            if element.tail.startswith(' ') or element.tail.startswith('\n'):
+                element.tail = element.tail.replace(original_tail, translated_tail)
+            else:
+                element.tail = translated_tail
+          # Recursively process child elements
+        for child in element:
+            processed_count = self._translate_xml_element(child, processed_count, total_count)
+        
+        return processed_count
+    
+    def _save_xml_pretty(self, tree, output_file: str):
+        """Save XML with pretty formatting and CDATA preservation for HTML content."""
+        # Convert to string
+        xml_str = ET.tostring(tree.getroot(), encoding='unicode')
+        
+        # Restore CDATA sections for HTML content
+        xml_str = self._restore_cdata_for_html_content(xml_str)
+          # Parse with minidom for pretty printing
+        try:
+            dom = minidom.parseString(xml_str)
+            # Get pretty formatted XML with 4-space indentation to match original
+            pretty_xml = dom.toprettyxml(indent="    ")
+            
+            # Clean up extra blank lines that minidom adds
+            lines = []
+            for line in pretty_xml.split('\n'):
+                line = line.rstrip()  # Remove trailing whitespace
+                if line.strip():  # Only keep non-empty lines
+                    lines.append(line)
+            
+            # Save with pretty formatting
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines) + '\n')
+        except Exception as e:
+            logger.warning(f"Error pretty-printing XML: {e}. Writing raw XML.")
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+                f.write(xml_str)
+    
+    def _restore_cdata_for_html_content(self, xml_str: str) -> str:
+        """Restore CDATA sections for content that contains HTML tags."""
+        import re
+        
+        # Look for content that has HTML entities (indicating original HTML/CDATA content)
+        # Pattern to match element content that contains HTML entities
+        pattern = r'(<([^>]+)>)([^<]*(?:&(?:lt|gt|amp|quot|apos);[^<]*)+)</\2>'
+        
+        def replace_with_cdata(match):
+            opening_tag = match.group(1)
+            tag_name = match.group(2)
+            content = match.group(3)
+            closing_tag = f'</{tag_name}>'
+            
+            # Unescape HTML entities
+            unescaped_content = (content
+                                .replace('&lt;', '<')
+                                .replace('&gt;', '>')
+                                .replace('&amp;', '&')
+                                .replace('&quot;', '"')
+                                .replace('&apos;', "'"))
+            
+            # If the unescaped content contains HTML tags, wrap in CDATA
+            if '<' in unescaped_content and '>' in unescaped_content:
+                return f'{opening_tag}<![CDATA[{unescaped_content}]]>{closing_tag}'
+            
+            return match.group(0)
+        
+        # Apply the replacement
+        result = re.sub(pattern, replace_with_cdata, xml_str, flags=re.DOTALL)
+        
+        return result
+
+    def _load_glossary(self) -> Dict[str, Dict[str, str]]:
+        """
+        Load the glossary CSV file for custom translation terms.
+        
+        Returns:
+            Dictionary mapping source terms to target terms and case preferences
+        """
+        glossary = {}
+        glossary_file = PROJECT_ROOT / "glossary.csv"
+        
+        if not glossary_file.exists():
+            logger.info("No glossary.csv file found. Using translation API only.")
+            return glossary
+        
+        try:
+            # Read the glossary CSV
+            with open(glossary_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Skip header and empty lines
+            for line_num, line in enumerate(lines[1:], 2):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                parts = line.split(';')
+                if len(parts) != 3:
+                    logger.warning(f"Glossary line {line_num} has wrong format (expected 3 columns): {line}")
+                    continue
+                
+                source_term, target_term, keep_case = parts
+                source_term = source_term.strip()
+                target_term = target_term.strip()
+                keep_case = keep_case.strip().lower() == 'true'
+                
+                if source_term and target_term:
+                    glossary[source_term.lower()] = {
+                        'target': target_term,
+                        'keep_case': keep_case
+                    }
+            
+            if glossary:
+                logger.info(f"Loaded {len(glossary)} terms from glossary.csv")
+            else:
+                logger.info("Glossary.csv file is empty or contains no valid entries")
+                
+        except Exception as e:
+            logger.warning(f"Error loading glossary.csv: {e}")
+        
+        return glossary
+    
+    def _apply_glossary_replacements(self, text: str) -> str:
+        """
+        Apply glossary replacements to text before translation.
+        
+        Args:
+            text: Text to process
+            
+        Returns:
+            Text with glossary terms replaced
+        """
+        if not hasattr(self, 'glossary') or not self.glossary:
+            return text
+        
+        result = text
+        
+        for source_term, config in self.glossary.items():
+            target_term = config['target']
+            keep_case = config['keep_case']
+            
+            # Create case-insensitive pattern for whole words
+            pattern = re.compile(r'\b' + re.escape(source_term) + r'\b', re.IGNORECASE)
+            
+            def replace_match(match):
+                matched_text = match.group(0)
+                
+                if keep_case:
+                    # Preserve the case pattern of the original match
+                    return self._preserve_case(matched_text, target_term)
+                else:
+                    # Use target term as-is
+                    return target_term
+            
+            result = pattern.sub(replace_match, result)
+        
+        return result
+    
+    def _preserve_case(self, original: str, replacement: str) -> str:
+        """
+        Preserve the case pattern of the original word when applying replacement.
+        
+        Args:
+            original: Original word with case pattern to preserve
+            replacement: Replacement word
+            
+        Returns:
+            Replacement word with case pattern of original
+        """
+        if original.isupper():
+            return replacement.upper()
+        elif original.islower():
+            return replacement.lower()
+        elif original.istitle():
+            return replacement.capitalize()
+        else:
+            # Mixed case - return replacement as-is
+            return replacement
+
+    def _translate_with_retry(self, text: str, max_retries: int = 3, base_delay: float = 0.05) -> str:
+        """
+        Translate text with exponential backoff retry mechanism.
+        
+        Args:
+            text: Text to translate
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay in seconds (will increase with each retry)
+            
+        Returns:
+            Translated text
+        """
+        if not text or len(text.strip()) <= 1:
+            return text
+            
+        text_clean = text.strip()
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):  # +1 for initial attempt
+            try:
+                # Translate using the appropriate library
+                if TRANSLATOR_TYPE == "deep_translator":
+                    translated = self.translator.translate(text_clean)
+                elif TRANSLATOR_TYPE == "googletrans":
+                    result = self.translator.translate(
+                        text_clean, 
+                        src=self.source_lang, 
+                        dest=self.target_lang
+                    )
+                    translated = result.text
+                else:
+                    return text
+                
+                # Success! Add minimal delay and return
+                if attempt == 0:
+                    # First attempt - use minimal delay
+                    time.sleep(base_delay)
+                else:
+                    # Retry succeeded - use slightly longer delay to be respectful
+                    time.sleep(base_delay * 2)
+                    logger.debug(f"Translation succeeded on attempt {attempt + 1}")
+                
+                return translated
+                
+            except Exception as e:
+                last_exception = e
+                
+                if attempt < max_retries:
+                    # Calculate exponential backoff delay
+                    retry_delay = base_delay * (2 ** attempt) + (0.05 * attempt)  # 50ms extra per retry
+                    logger.debug(f"Translation attempt {attempt + 1} failed: {e}. Retrying in {retry_delay:.3f}s...")
+                    time.sleep(retry_delay)
+                else:
+                    # All retries exhausted
+                    logger.warning(f"Translation failed after {max_retries + 1} attempts for '{text[:50]}...': {last_exception}")
+        
+        # If we get here, all attempts failed
+        return text
+
+    def _translate_plain_text(self, text: str) -> str:
+        """
+        Translate plain text without HTML.
+        
+        Args:
+            text: Plain text to translate
+            
+        Returns:
+            Translated text
+        """
+        if not text or len(text.strip()) <= 1:
+            return text
+            
+        try:
+            text_clean = text.strip()
+              # Translate using the appropriate library
+            if TRANSLATOR_TYPE == "deep_translator":
+                # deep_translator: translator was initialized with languages, so only pass text
+                translated = self.translator.translate(text_clean)
+            elif TRANSLATOR_TYPE == "googletrans":
+                # googletrans: generic translator, so pass text and language parameters
+                result = self.translator.translate(
+                    text_clean, 
+                    src=self.source_lang, 
+                    dest=self.target_lang
+                )
+                translated = result.text
+            else:
+                return text
+                
+            # Add delay to avoid rate limiting
+            time.sleep(self.delay)
+            
+            return translated
+            
+        except Exception as e:
+            logger.warning(f"Plain text translation failed for '{text}': {e}")
+            return text
+
+    def translate_xml(self, input_file: str, output_file: str) -> bool:
+        """
+        Translate text content in XML file while preserving structure and attributes.
+        
+        Args:
+            input_file: Path to input XML file
+            output_file: Path to output XML file
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.info(f"Reading XML file: {input_file}")
+            
+            # Parse the XML file
+            tree = ET.parse(input_file)
+            root = tree.getroot()
+            
+            # Count total text elements for progress tracking
+            total_elements = self._count_text_elements(root)
+            logger.info(f"Found {total_elements} text elements to translate")
+            
+            # Translate all text content recursively
+            translated_count = self._translate_xml_element(root, 0, total_elements)
+            
+            # Save the translated XML
+            logger.info(f"Saving translated XML to: {output_file}")
+            self._save_xml_pretty(tree, output_file)
+            
+            logger.info(f"XML translation completed successfully!")
+            logger.info(f"Translated {translated_count} text elements")
+            
+            return True
+            
+        except ET.ParseError as e:
+            logger.error(f"XML parsing error: {e}")
+            return False
+        except FileNotFoundError:
+            logger.error(f"Input file not found: {input_file}")
+            return False
+        except Exception as e:
+            logger.error(f"Error during XML translation: {e}")
+            return False
+    
+    def _count_text_elements(self, element) -> int:
+        """Count elements with text content for progress tracking."""
+        count = 0
+        if element.text and element.text.strip():
+            count += 1
+        if element.tail and element.tail.strip():
+            count += 1
+        for child in element:
+            count += self._count_text_elements(child)
+        return count
+    
+    def _translate_xml_element(self, element, current_count: int, total_count: int) -> int:
+        """
+        Recursively translate text content in XML elements.
+        
+        Args:
+            element: XML element to process
+            current_count: Current progress count
+            total_count: Total elements to process
+            
+        Returns:
+            Updated count of processed elements
+        """
+        processed_count = current_count
+        
+        # Translate element text content
+        if element.text and element.text.strip():
+            processed_count += 1
+            if processed_count % 10 == 0:  # Progress update every 10 elements
+                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
+            
+            original_text = element.text.strip()
+            translated_text = self.translate_text(original_text)
+            
+            # Preserve whitespace structure
+            if element.text.startswith(' ') or element.text.startswith('\n'):
+                element.text = element.text.replace(original_text, translated_text)
+            else:
+                element.text = translated_text
+        
+        # Translate tail text (text after closing tag)
+        if element.tail and element.tail.strip():
+            processed_count += 1
+            if processed_count % 10 == 0:
+                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
+            
+            original_tail = element.tail.strip()
+            translated_tail = self.translate_text(original_tail)
+            
+            # Preserve whitespace structure
+            if element.tail.startswith(' ') or element.tail.startswith('\n'):
+                element.tail = element.tail.replace(original_tail, translated_tail)
+            else:
+                element.tail = translated_tail
+          # Recursively process child elements
+        for child in element:
+            processed_count = self._translate_xml_element(child, processed_count, total_count)
+        
+        return processed_count
+    
+    def _save_xml_pretty(self, tree, output_file: str):
+        """Save XML with pretty formatting and CDATA preservation for HTML content."""
+        # Convert to string
+        xml_str = ET.tostring(tree.getroot(), encoding='unicode')
+        
+        # Restore CDATA sections for HTML content
+        xml_str = self._restore_cdata_for_html_content(xml_str)
+          # Parse with minidom for pretty printing
+        try:
+            dom = minidom.parseString(xml_str)
+            # Get pretty formatted XML with 4-space indentation to match original
+            pretty_xml = dom.toprettyxml(indent="    ")
+            
+            # Clean up extra blank lines that minidom adds
+            lines = []
+            for line in pretty_xml.split('\n'):
+                line = line.rstrip()  # Remove trailing whitespace
+                if line.strip():  # Only keep non-empty lines
+                    lines.append(line)
+            
+            # Save with pretty formatting
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines) + '\n')
+        except Exception as e:
+            logger.warning(f"Error pretty-printing XML: {e}. Writing raw XML.")
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+                f.write(xml_str)
+    
+    def _restore_cdata_for_html_content(self, xml_str: str) -> str:
+        """Restore CDATA sections for content that contains HTML tags."""
+        import re
+        
+        # Look for content that has HTML entities (indicating original HTML/CDATA content)
+        # Pattern to match element content that contains HTML entities
+        pattern = r'(<([^>]+)>)([^<]*(?:&(?:lt|gt|amp|quot|apos);[^<]*)+)</\2>'
+        
+        def replace_with_cdata(match):
+            opening_tag = match.group(1)
+            tag_name = match.group(2)
+            content = match.group(3)
+            closing_tag = f'</{tag_name}>'
+            
+            # Unescape HTML entities
+            unescaped_content = (content
+                                .replace('&lt;', '<')
+                                .replace('&gt;', '>')
+                                .replace('&amp;', '&')
+                                .replace('&quot;', '"')
+                                .replace('&apos;', "'"))
+            
+            # If the unescaped content contains HTML tags, wrap in CDATA
+            if '<' in unescaped_content and '>' in unescaped_content:
+                return f'{opening_tag}<![CDATA[{unescaped_content}]]>{closing_tag}'
+            
+            return match.group(0)
+        
+        # Apply the replacement
+        result = re.sub(pattern, replace_with_cdata, xml_str, flags=re.DOTALL)
+        
+        return result
+
+    def _load_glossary(self) -> Dict[str, Dict[str, str]]:
+        """
+        Load the glossary CSV file for custom translation terms.
+        
+        Returns:
+            Dictionary mapping source terms to target terms and case preferences
+        """
+        glossary = {}
+        glossary_file = PROJECT_ROOT / "glossary.csv"
+        
+        if not glossary_file.exists():
+            logger.info("No glossary.csv file found. Using translation API only.")
+            return glossary
+        
+        try:
+            # Read the glossary CSV
+            with open(glossary_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Skip header and empty lines
+            for line_num, line in enumerate(lines[1:], 2):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                parts = line.split(';')
+                if len(parts) != 3:
+                    logger.warning(f"Glossary line {line_num} has wrong format (expected 3 columns): {line}")
+                    continue
+                
+                source_term, target_term, keep_case = parts
+                source_term = source_term.strip()
+                target_term = target_term.strip()
+                keep_case = keep_case.strip().lower() == 'true'
+                
+                if source_term and target_term:
+                    glossary[source_term.lower()] = {
+                        'target': target_term,
+                        'keep_case': keep_case
+                    }
+            
+            if glossary:
+                logger.info(f"Loaded {len(glossary)} terms from glossary.csv")
+            else:
+                logger.info("Glossary.csv file is empty or contains no valid entries")
+                
+        except Exception as e:
+            logger.warning(f"Error loading glossary.csv: {e}")
+        
+        return glossary
+    
+    def _apply_glossary_replacements(self, text: str) -> str:
+        """
+        Apply glossary replacements to text before translation.
+        
+        Args:
+            text: Text to process
+            
+        Returns:
+            Text with glossary terms replaced
+        """
+        if not hasattr(self, 'glossary') or not self.glossary:
+            return text
+        
+        result = text
+        
+        for source_term, config in self.glossary.items():
+            target_term = config['target']
+            keep_case = config['keep_case']
+            
+            # Create case-insensitive pattern for whole words
+            pattern = re.compile(r'\b' + re.escape(source_term) + r'\b', re.IGNORECASE)
+            
+            def replace_match(match):
+                matched_text = match.group(0)
+                
+                if keep_case:
+                    # Preserve the case pattern of the original match
+                    return self._preserve_case(matched_text, target_term)
+                else:
+                    # Use target term as-is
+                    return target_term
+            
+            result = pattern.sub(replace_match, result)
+        
+        return result
+    
+    def _preserve_case(self, original: str, replacement: str) -> str:
+        """
+        Preserve the case pattern of the original word when applying replacement.
+        
+        Args:
+            original: Original word with case pattern to preserve
+            replacement: Replacement word
+            
+        Returns:
+            Replacement word with case pattern of original
+        """
+        if original.isupper():
+            return replacement.upper()
+        elif original.islower():
+            return replacement.lower()
+        elif original.istitle():
+            return replacement.capitalize()
+        else:
+            # Mixed case - return replacement as-is
+            return replacement
 
 def get_language_suffix(lang_code: str) -> str:
     """Generate a column suffix based on language code."""
@@ -1038,7 +2210,7 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
     
     if df_preview is None:
         print("Could not auto-detect delimiter. Trying manual selection...")
-        # Fallback to manual selection
+        # Fallback to manual selection  
         print("Choose CSV delimiter:")
         print("  1. Comma (,) - Standard CSV format")
         print("  2. Semicolon (;) - European CSV format")
@@ -1054,464 +2226,7 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
         except Exception as e:
             print(f"Error reading CSV file with {chosen_delimiter} delimiter: {e}")
             return {}
-    
-    # Report detected delimiter
-    delimiter_name = "Semicolon (;) - European CSV format" if chosen_delimiter == ';' else "Comma (,) - Standard CSV format"
-    print(f"✓ Using delimiter: {delimiter_name}")
-    print()
-
-    # Show available columns
-    print(f"Available columns in '{selected_file.name}':")
-    columns_list = list(df_preview.columns)
-    for i, col in enumerate(columns_list, 1):
-        print(f"  {i}. {col}")
-    
-    # Get columns to translate by numbers
-    print("\nWhich columns would you like to translate?")
-    print("Enter column numbers separated by commas (e.g., 1,3 or 2,4,5)")
-    columns_input = input("Column numbers: ").strip()
-    
-    if not columns_input:
-        print("No columns specified!")
-        return {}
-    
-    # Parse column numbers and convert to column names
-    try:
-        column_numbers = [int(num.strip()) for num in columns_input.split(',')]
-        columns_to_translate = []
-        
-        for num in column_numbers:
-            if 1 <= num <= len(columns_list):
-                columns_to_translate.append(columns_list[num - 1])
-            else:
-                print(f"Invalid column number: {num}. Must be between 1 and {len(columns_list)}")
-                return {}
-        
-        print(f"Selected columns: {', '.join(columns_to_translate)}")
-        
-    except ValueError:
-        print("Invalid input! Please enter numbers separated by commas.")
-        return {}
-    
-    # Generate output file path with new naming convention
-    output_filename = generate_output_filename(selected_file.name, lang_prefs['target_lang'], is_root_file=True)
-    output_file = str(output_dir / output_filename)
-    print(f"\nOutput will be saved to: {output_file}")
-    
-    return {
-        'mode': 'single',
-        'file_type': 'csv',
-        'input_file': input_file,
-        'output_file': output_file,
-        'columns_to_translate': columns_to_translate,
-        'delimiter': chosen_delimiter,
-        'source_lang': lang_prefs['source_lang'],
-        'target_lang': lang_prefs['target_lang'],
-        'source_name': lang_prefs['source_name'],
-        'target_name': lang_prefs['target_name']
-    }
-
-def get_xml_input_single(selected_file: Path, input_file: str, output_dir: Path, lang_prefs: Dict) -> Dict[str, any]:
-    """Get XML-specific input parameters for single file mode."""
-    print(f"\nXML file selected: {selected_file.name}")
-    print("XML translation will translate all text content while preserving structure and attributes.")
-    
-    # Generate output file path with new naming convention
-    output_filename = generate_output_filename(selected_file.name, lang_prefs['target_lang'], is_root_file=True)
-    output_file = str(output_dir / output_filename)
-    print(f"Output will be saved to: {output_file}")
-    
-    return {
-        'mode': 'single',
-        'file_type': 'xml',
-        'input_file': input_file,
-        'output_file': output_file,
-        'source_lang': lang_prefs['source_lang'],
-        'target_lang': lang_prefs['target_lang'],
-        'source_name': lang_prefs['source_name'],
-        'target_name': lang_prefs['target_name']
-    }
-
-def process_batch_files(params: Dict[str, any]) -> bool:
-    """
-    Process selected files in batch mode based on folder choice.
-    
-    Args:
-        params: Parameters from get_batch_processing_input()
-        
-    Returns:
-        True if all files processed successfully, False otherwise
-    """
-    discovered = params['discovered']
-    folder_choice = params['folder_choice']
-    source_lang = params['source_lang']
-    target_lang = params['target_lang']
-    
-    # Create translator instance
-    translator = CSVTranslator(
-        source_lang=source_lang,
-        target_lang=target_lang,
-        delay_between_requests=0.1
-    )
-    
-    successful_files = 0
-    failed_files = []
-    
-    # Determine which files to process based on folder choice
-    files_to_process = []
-    
-    if folder_choice['type'] == 'root':
-        # Process only root files
-        for file_path in discovered['root_files']:
-            files_to_process.append((file_path, 'root'))
-        print(f"\n[BATCH] Processing {len(files_to_process)} files from root directory...")
-        
-    elif folder_choice['type'] == 'folder':
-        # Process only the selected folder
-        folder_name = folder_choice['folder_name']
-        for file_path in discovered['folders'][folder_name]:
-            files_to_process.append((file_path, folder_name))
-        print(f"\n[BATCH] Processing {len(files_to_process)} files from folder: {folder_name}")
-        
-    elif folder_choice['type'] == 'all':
-        # Process all files (original behavior)
-        for file_path in discovered['root_files']:
-            files_to_process.append((file_path, 'root'))
-        for folder_name, files in discovered['folders'].items():
-            for file_path in files:
-                files_to_process.append((file_path, folder_name))
-        print(f"\n[BATCH] Processing {len(files_to_process)} files from all locations...")
-    
-    if not files_to_process:
-        print("[WARNING] No files to process!")
-        return True
-    
-    print(f"Language: {params['source_name']} -> {params['target_name']}")
-    print()
-      # Process the selected files
-    for current_file, (file_path, location) in enumerate(files_to_process, 1):
-        if location == 'root':
-            print(f"[FILE] Processing file {current_file}/{len(files_to_process)}: {file_path.name}")
-            output_dir = TARGET_DIR
-            is_root_file = True
-        else:
-            relative_path = file_path.relative_to(SOURCE_DIR)
-            print(f"[FILE] Processing file {current_file}/{len(files_to_process)}: {relative_path}")
-            # Create target subfolder with language suffix
-            output_dir = generate_output_directory(TARGET_DIR, location, target_lang, is_batch_folder=True)
-            output_dir.mkdir(parents=True, exist_ok=True)
-            is_root_file = False
-            if current_file == 1 or location not in [loc for _, loc in files_to_process[:current_file-1]]:
-                print(f"[FOLDER] Created target folder: {output_dir}")
-        
-        if process_single_file_batch(file_path, output_dir, translator, target_lang, is_root_file):
-            successful_files += 1
-            if location == 'root':
-                print(f"[SUCCESS] Successfully processed: {file_path.name}")
-            else:
-                relative_path = file_path.relative_to(SOURCE_DIR)
-                print(f"[SUCCESS] Successfully processed: {relative_path}")
-        else:
-            if location == 'root':
-                failed_files.append(str(file_path.name))
-                print(f"[FAILED] Failed to process: {file_path.name}")
-            else:
-                relative_path = file_path.relative_to(SOURCE_DIR)
-                failed_files.append(str(relative_path))
-                print(f"[FAILED] Failed to process: {relative_path}")
-        print()
-    
-    # Print summary
-    print("=" * 60)
-    print("[SUMMARY] BATCH PROCESSING SUMMARY")
-    print("=" * 60)
-    print(f"Total files: {len(files_to_process)}")
-    print(f"Successfully processed: {successful_files}")
-    print(f"Failed: {len(failed_files)}")
-    
-    if failed_files:
-        print("\n[FAILED] Failed files:")
-        for failed_file in failed_files:
-            print(f"  • {failed_file}")
-    
-    if successful_files > 0:
-        print(f"\n[SUCCESS] Successfully translated files are saved in: {TARGET_DIR}")
-        print(f"[LOG] Check the log file for detailed information: translation.log")
-    
-    return len(failed_files) == 0
-
-def process_single_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTranslator', target_lang: str, is_root_file: bool = False) -> bool:
-    """
-    Process a single file in batch mode.
-    
-    Args:
-        file_path: Path to the source file
-        output_dir: Directory where output should be saved
-        translator: Configured translator instance
-        target_lang: Target language code
-        is_root_file: True if processing a root file, False if in subfolder
-        
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        file_type = file_path.suffix.lower()
-        
-        if file_type == '.csv':
-            return process_csv_file_batch(file_path, output_dir, translator, target_lang, is_root_file)
-        elif file_type == '.xml':
-            return process_xml_file_batch(file_path, output_dir, translator, target_lang, is_root_file)
-        else:
-            logger.error(f"Unsupported file type: {file_type}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Error processing file {file_path}: {e}")
-        return False
-
-def process_csv_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTranslator', target_lang: str, is_root_file: bool = False) -> bool:
-    """Process a single CSV file in batch mode."""
-    try:
-        # Try different delimiters to determine the correct one
-        delimiters = [',', ';']
-        df = None
-        chosen_delimiter = ','
-        
-        for delimiter in delimiters:
-            try:
-                df_test = pd.read_csv(file_path, nrows=5, delimiter=delimiter)
-                if len(df_test.columns) > 1:  # Good indication of correct delimiter
-                    df = pd.read_csv(file_path, delimiter=delimiter)
-                    chosen_delimiter = delimiter
-                    break
-            except:
-                continue
-        
-        if df is None:
-            logger.error(f"Could not read CSV file with any known delimiter: {file_path}")
-            return False
-        
-        logger.info(f"CSV file loaded with '{chosen_delimiter}' delimiter: {file_path}")
-        logger.info(f"Available columns: {list(df.columns)}")
-        
-        # Auto-detect text columns for translation
-        text_columns = []
-        for col in df.columns:
-            # Sample a few values to see if they contain text
-            sample_values = df[col].dropna().head(3).astype(str)
-            if any(len(str(val)) > 10 and any(c.isalpha() for c in str(val)) for val in sample_values):
-                text_columns.append(col)
-        
-        if not text_columns:
-            # Fallback: ask user or use all string columns
-            string_columns = df.select_dtypes(include=['object']).columns.tolist()
-            text_columns = string_columns[:2] if len(string_columns) >= 2 else string_columns
-        
-        if not text_columns:
-            logger.warning(f"No suitable text columns found in {file_path}")
-            return False
-        
-        logger.info(f"Auto-selected columns for translation: {text_columns}")
-        
-        # Generate output file path with new naming convention
-        output_filename = generate_output_filename(file_path.name, target_lang, is_root_file)
-        output_file = output_dir / output_filename
-        
-        # Generate language-specific suffix for columns
-        language_suffix = get_language_suffix(target_lang)
-        
-        # Translate the CSV
-        success = translator.translate_csv(
-            input_file=str(file_path),
-            output_file=str(output_file),
-            columns_to_translate=text_columns,
-            append_suffix=language_suffix,
-            delimiter=chosen_delimiter
-        )
-        
-        return success
-        
-    except Exception as e:
-        logger.error(f"Error processing CSV file {file_path}: {e}")
-        return False
-
-def process_xml_file_batch(file_path: Path, output_dir: Path, translator: 'CSVTranslator', target_lang: str, is_root_file: bool = False) -> bool:
-    """Process a single XML file in batch mode."""
-    try:
-        # Generate output file path with new naming convention
-        output_filename = generate_output_filename(file_path.name, target_lang, is_root_file)
-        output_file = output_dir / output_filename
-        
-        # Translate the XML
-        success = translator.translate_xml(
-            input_file=str(file_path),
-            output_file=str(output_file)
-        )
-        
-        return success
-        
-    except Exception as e:
-        logger.error(f"Error processing XML file {file_path}: {e}")
-        return False
-
-def get_batch_folder_selection(discovered: Dict[str, List[Path]]) -> Dict[str, any]:
-    """
-    Allow user to select which folder to batch process.
-    
-    Args:
-        discovered: Dictionary from discover_files_and_folders()
-        
-    Returns:
-        Dictionary with selection info: {'type': 'root'|'folder'|'all', 'folder_name': str}
-    """
-    options = []
-    
-    # Add root option if there are root files
-    if discovered['root_files']:
-        options.append(('root', f"Root directory only ({len(discovered['root_files'])} files)"))
-    
-    # Add individual folder options
-    for folder_name, files in discovered['folders'].items():
-        options.append(('folder', f"Folder '{folder_name}' only ({len(files)} files)", folder_name))
-    
-    # Add "all" option if there are both root files and folders
-    if discovered['root_files'] and discovered['folders']:
-        total_files = len(discovered['root_files']) + sum(len(files) for files in discovered['folders'].values())
-        options.append(('all', f"All files and folders ({total_files} files total)"))
-    
-    if not options:
-        print("No files available for batch processing.")
-        return {}
-    
-    print("\nChoose what to batch process:")
-    for i, option in enumerate(options, 1):
-        if len(option) == 2:  # root or all
-            print(f"  {i}. {option[1]}")
-        else:  # specific folder
-            print(f"  {i}. {option[1]}")
-    
-    while True:
-        try:
-            choice = input(f"Enter choice (1-{len(options)}): ").strip()
-            choice_idx = int(choice) - 1
-            if 0 <= choice_idx < len(options):
-                selected_option = options[choice_idx]
-                
-                if selected_option[0] == 'root':
-                    print(f"Selected: Root directory only")
-                    return {'type': 'root'}
-                elif selected_option[0] == 'folder':
-                    folder_name = selected_option[2]
-                    print(f"Selected: Folder '{folder_name}' only")
-                    return {'type': 'folder', 'folder_name': folder_name}
-                elif selected_option[0] == 'all':
-                    print(f"Selected: All files and folders")
-                    return {'type': 'all'}
-                break
-            else:
-                print(f"Invalid choice! Please enter a number between 1-{len(options)}.")
-        except ValueError:
-            print("Invalid input! Please enter a number.")
-    
-    return {}
-
-def main():
-    """Main function to run the Translator3000 - Multi-Language CSV & XML Translation Script."""
-    print("Translator3000 - Multi-Language CSV & XML Translation Script")
-    print("=" * 70)
-    
-    # Display translator information
-    if TRANSLATOR_TYPE == "deep_translator":
-        print("[ENGINE] Translation Engine: deep-translator (preferred)")
-    elif TRANSLATOR_TYPE == "googletrans":
-        print("[ENGINE] Translation Engine: googletrans (fallback)")
-    else:
-        print("[ERROR] No translation engine available!")
-        return
-      # Ensure directories exist
-    SOURCE_DIR.mkdir(exist_ok=True)
-    TARGET_DIR.mkdir(exist_ok=True)
-    
-    print(f"[SOURCE] Source directory: {SOURCE_DIR}")
-    print(f"[TARGET] Target directory: {TARGET_DIR}")
-    print()
-    
-    # Example usage for automated processing (uncomment and modify as needed)
-    # translator = CSVTranslator(source_lang='en', target_lang='nl', delay_between_requests=0.1)
-    # For CSV:
-    # success = translator.translate_csv(
-    #     input_file=str(SOURCE_DIR / "products.csv"),
-    #     output_file=str(TARGET_DIR / "products_translated.csv"),
-    #     columns_to_translate=["name", "description"]
-    # )
-    # For XML:
-    # success = translator.translate_xml(
-    #     input_file=str(SOURCE_DIR / "content.xml"),
-    #     output_file=str(TARGET_DIR / "content_translated.xml")
-    # )
-      # Interactive mode
-    params = get_batch_processing_input()
-    if not params:
-        print("Exiting due to invalid input.")
-        return
-    
-    if params.get('mode') == 'batch':
-        # Batch processing mode
-        success = process_batch_files(params)
-        if success:
-            print(f"\n🎉 All files processed successfully!")
-        else:
-            print(f"\n⚠️ Some files failed to process. Check the log for details.")
-        return
-    
-    # Single file mode (original behavior)
-    # Create translator instance with selected languages
-    translator = CSVTranslator(
-        source_lang=params['source_lang'],
-        target_lang=params['target_lang'],
-        delay_between_requests=0.1
-    )
-      # Perform translation based on file type
-    print(f"\nStarting translation...")
-    print(f"Language: {params['source_name']} -> {params['target_name']}")
-    print(f"Input file: {params['input_file']}")
-    print(f"Output file: {params['output_file']}")
-    
-    if params['file_type'] == 'csv':
-        print(f"Columns to translate: {params['columns_to_translate']}")
-        print(f"CSV delimiter: '{params['delimiter']}'")
-        print("\nThis may take a while depending on the size of your file...")
-        
-        # Generate language-specific suffix
-        language_suffix = get_language_suffix(params['target_lang'])
-        
-        success = translator.translate_csv(
-            input_file=params['input_file'],
-            output_file=params['output_file'],
-            columns_to_translate=params['columns_to_translate'],
-            append_suffix=language_suffix,
-            delimiter=params['delimiter']
-        )
-    elif params['file_type'] == 'xml':
-        print("File type: XML")
-        print("\nThis may take a while depending on the size of your file...")
-        
-        success = translator.translate_xml(
-            input_file=params['input_file'],
-            output_file=params['output_file']
-        )
-    else:
-        print("[ERROR] Unsupported file type!")
-        return
-    
-    if success:
-        print(f"\n[SUCCESS] Translation completed successfully!")
-        print(f"[OUTPUT] Translated file saved as: {params['output_file']}")
-        print(f"[LOG] Log file: translation.log")
-        print(f"[OUTPUT] Check the 'target' folder for your translated file")
-    else:
-        print(f"\n[FAILED] Translation failed. Check the log file for details.")
-
 
 if __name__ == "__main__":
-    main()
+    # Main execution would go here - currently handled by interactive mode
+    pass

@@ -1,14 +1,15 @@
-# CSV Translation Script
+# CSV & XML Translation Script
 
-A Python script for translating CSV file columns between multiple languages using the free Google Translate API.
+A Python script for translating CSV file columns and XML text content between multiple languages using the free Google Translate API.
 
 ## Features
 
 - 🌐 **Multi-Language Support**: Translate between 10 supported languages
 - 🔄 **Dynamic Language Selection**: Choose source and target languages at runtime
 - 📊 **CSV Processing**: Reads and processes CSV files with pandas
+- 🏷️ **XML Processing**: Translates XML text content while preserving structure and attributes
 - 🔄 **Batch Translation**: Translates multiple columns efficiently
-- 📝 **Preserves Data**: Keeps original columns and adds translated versions
+- 📝 **Preserves Data**: Keeps original columns/structure and adds translated versions
 - 🛡️ **Error Handling**: Graceful handling of translation failures
 - 📊 **Progress Tracking**: Real-time progress updates and logging
 - ⚡ **Rate Limiting**: Built-in delays to avoid API throttling
@@ -31,8 +32,8 @@ A Python script for translating CSV file columns between multiple languages usin
 ## Project Structure
 
 ```
-CSV Translator/
-├── source/           # Place your CSV files here for translation
+CSV & XML Translator/
+├── source/           # Place your CSV/XML files here for translation
 ├── target/           # Translated files are saved here
 ├── csv_translator.py # Main translation script
 ├── requirements.txt  # Python dependencies
@@ -59,13 +60,13 @@ CSV Translator/
 
 ### Quick Start
 
-1. **Place your CSV files** in the `source/` folder
+1. **Place your CSV/XML files** in the `source/` folder
 2. **Run the script**:
    ```bash
    python csv_translator.py
    ```
 3. **Select your languages** (source language of your data, target language for translation)
-4. **Follow the prompts** to select files and columns to translate (by number, e.g., 1,3)
+4. **Follow the prompts** to select files and columns to translate (by number for CSV, automatic for XML)
 5. **Find your translated files** in the `target/` folder
 
 ### Interactive Mode (Detailed)
@@ -78,10 +79,10 @@ CSV Translator/
 2. The script will:
    - Ask you to choose source language (Danish or English, default: English)
    - Ask you to choose target language from 10 supported options
-   - Automatically show CSV files in the `source/` folder
+   - Automatically show CSV and XML files in the `source/` folder
    - Let you choose which file to translate
-   - Show available columns in your CSV with numbers
-   - Ask which columns you want to translate (by number, e.g., "1,3" or "2,4,5")
+   - **For CSV files**: Show available columns with numbers and ask which columns you want to translate (by number, e.g., "1,3" or "2,4,5")
+   - **For XML files**: Automatically translate all text content while preserving structure and attributes
    - Save the translated file to the `target/` folder
 
 ### Programmatic Usage

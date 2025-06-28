@@ -28,6 +28,8 @@ import re
 from typing import List, Dict, Optional
 import logging
 from pathlib import Path
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
 
 # Configure logging
 logging.basicConfig(
@@ -103,7 +105,8 @@ class CSVTranslator:
         """
         if TRANSLATOR_TYPE is None:
             raise ImportError("No translation library available. Please install deep-translator or googletrans")
-          # Validate language codes
+        
+        # Validate language codes
         if source_lang not in SUPPORTED_LANGUAGES:
             raise ValueError(f"Unsupported source language: {source_lang}. Supported: {list(SUPPORTED_LANGUAGES.keys())}")
         if target_lang not in SUPPORTED_LANGUAGES:
@@ -234,8 +237,7 @@ class CSVTranslator:
                 
                 # Add translated column with suffix
                 new_column_name = f"{column}{append_suffix}"
-                result_df[new_column_name] = translated_column
-                  # Save the result with the same delimiter
+                result_df[new_column_name] = translated_column            # Save the result with the same delimiter
             logger.info(f"Saving translated CSV to: {output_file} (delimiter: '{delimiter}')")
             result_df.to_csv(output_file, index=False, encoding='utf-8', sep=delimiter)
             
@@ -387,22 +389,157 @@ class CSVTranslator:
             logger.warning(f"Plain text translation failed for '{text}': {e}")
             return text
 
+    def translate_xml(self, input_file: str, output_file: str) -> bool:
+        """
+        Translate text content in XML file while preserving structure and attributes.
+        
+        Args:
+            input_file: Path to input XML file
+            output_file: Path to output XML file
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.info(f"Reading XML file: {input_file}")
+            
+            # Parse the XML file
+            tree = ET.parse(input_file)
+            root = tree.getroot()
+            
+            # Count total text elements for progress tracking
+            total_elements = self._count_text_elements(root)
+            logger.info(f"Found {total_elements} text elements to translate")
+            
+            # Translate all text content recursively
+            translated_count = self._translate_xml_element(root, 0, total_elements)
+            
+            # Save the translated XML
+            logger.info(f"Saving translated XML to: {output_file}")
+            self._save_xml_pretty(tree, output_file)
+            
+            logger.info(f"XML translation completed successfully!")
+            logger.info(f"Translated {translated_count} text elements")
+            
+            return True
+            
+        except ET.ParseError as e:
+            logger.error(f"XML parsing error: {e}")
+            return False
+        except FileNotFoundError:
+            logger.error(f"Input file not found: {input_file}")
+            return False
+        except Exception as e:
+            logger.error(f"Error during XML translation: {e}")
+            return False
+    
+    def _count_text_elements(self, element) -> int:
+        """Count elements with text content for progress tracking."""
+        count = 0
+        if element.text and element.text.strip():
+            count += 1
+        if element.tail and element.tail.strip():
+            count += 1
+        for child in element:
+            count += self._count_text_elements(child)
+        return count
+    
+    def _translate_xml_element(self, element, current_count: int, total_count: int) -> int:
+        """
+        Recursively translate text content in XML elements.
+        
+        Args:
+            element: XML element to process
+            current_count: Current progress count
+            total_count: Total elements to process
+            
+        Returns:
+            Updated count of processed elements
+        """
+        processed_count = current_count
+        
+        # Translate element text content
+        if element.text and element.text.strip():
+            processed_count += 1
+            if processed_count % 10 == 0:  # Progress update every 10 elements
+                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
+            
+            original_text = element.text.strip()
+            translated_text = self.translate_text(original_text)
+            
+            # Preserve whitespace structure
+            if element.text.startswith(' ') or element.text.startswith('\n'):
+                element.text = element.text.replace(original_text, translated_text)
+            else:
+                element.text = translated_text
+        
+        # Translate tail text (text after closing tag)
+        if element.tail and element.tail.strip():
+            processed_count += 1
+            if processed_count % 10 == 0:
+                logger.info(f"Progress: {processed_count}/{total_count} elements processed")
+            
+            original_tail = element.tail.strip()
+            translated_tail = self.translate_text(original_tail)
+            
+            # Preserve whitespace structure
+            if element.tail.startswith(' ') or element.tail.startswith('\n'):
+                element.tail = element.tail.replace(original_tail, translated_tail)
+            else:
+                element.tail = translated_tail
+        
+        # Recursively process child elements
+        for child in element:
+            processed_count = self._translate_xml_element(child, processed_count, total_count)
+        
+        return processed_count
+    
+    def _save_xml_pretty(self, tree, output_file: str):
+        """Save XML with pretty formatting."""
+        # Convert to string
+        xml_str = ET.tostring(tree.getroot(), encoding='unicode')
+        
+        # Parse with minidom for pretty printing
+        dom = minidom.parseString(xml_str)
+        
+        # Save with pretty formatting
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(dom.toprettyxml(indent="  "))
+
+def get_language_suffix(lang_code: str) -> str:
+    """Generate a column suffix based on language code."""
+    # Create a mapping for cleaner suffixes
+    suffix_mapping = {
+        'da': '_danish',
+        'nl': '_dutch',
+        'nl-be': '_flemish',
+        'en': '_english',
+        'fr': '_french',
+        'de': '_german',
+        'it': '_italian',
+        'no': '_norwegian',
+        'es': '_spanish',
+        'sv': '_swedish'
+    }
+    return suffix_mapping.get(lang_code, f'_{lang_code}')
+
 def get_language_preferences() -> Dict[str, str]:
     """Get source and target language preferences from user."""
     print("=== Language Configuration ===")
     
-    # Source language selection
-    print("\nSelect source language (language of your CSV content):")
+    # Source language selection    print("\nSelect source language (language of your CSV content):")
     print("  1. English (default)")
     print("  2. Danish")
-    source_choice = input("Enter choice (1 or 2, default: 1): ").strip()    
+    source_choice = input("Enter choice (1 or 2, default: 1): ").strip()
+    
     if source_choice == "2":
         source_lang = "da"
         print("Selected: Danish")
     else:
         source_lang = "en"
         print("Selected: English")
-      # Target language selection
+    
+    # Target language selection
     print(f"\nSelect target language (translate TO):")
     lang_options = [
         ('da', 'Danish'),
@@ -446,23 +583,7 @@ def get_language_preferences() -> Dict[str, str]:
         'source_name': SUPPORTED_LANGUAGES[source_lang],
         'target_name': SUPPORTED_LANGUAGES[target_lang]
     }
-    
-def get_language_suffix(lang_code: str) -> str:
-    """Generate a column suffix based on language code."""
-    # Create a mapping for cleaner suffixes
-    suffix_mapping = {
-        'da': '_danish',
-        'nl': '_dutch',
-        'nl-be': '_flemish',
-        'en': '_english',
-        'fr': '_french',
-        'de': '_german',
-        'it': '_italian',
-        'no': '_norwegian',
-        'es': '_spanish',
-        'sv': '_swedish'
-    }
-    return suffix_mapping.get(lang_code, f'_{lang_code}')
+
 
 def get_user_input() -> Dict[str, any]:
     """Get user input for translation parameters."""
@@ -471,33 +592,37 @@ def get_user_input() -> Dict[str, any]:
     if not lang_prefs:
         return {}
     
-    print(f"\n=== CSV Translation Script ===")
+    print(f"\n=== CSV & XML Translation Script ===")
     print(f"Translation: {lang_prefs['source_name']} → {lang_prefs['target_name']}")
     print(f"Source files should be placed in: {SOURCE_DIR}")
     print(f"Translated files will be saved to: {TARGET_DIR}")
     print()
     
-    # List available CSV files in source directory
+    # List available files (CSV and XML)
     csv_files = list(SOURCE_DIR.glob("*.csv"))
-    if not csv_files:
-        print(f"No CSV files found in {SOURCE_DIR}")
-        print("Please place your CSV files in the 'source' folder and try again.")
+    xml_files = list(SOURCE_DIR.glob("*.xml"))
+    all_files = csv_files + xml_files
+    
+    if not all_files:
+        print(f"No CSV or XML files found in {SOURCE_DIR}")
+        print("Please place your files in the 'source' folder and try again.")
         return {}
     
-    print("Available CSV files in source folder:")
-    for i, file_path in enumerate(csv_files, 1):
-        print(f"  {i}. {file_path.name}")
+    print("Available files in source folder:")
+    for i, file_path in enumerate(all_files, 1):
+        file_type = "CSV" if file_path.suffix.lower() == ".csv" else "XML"
+        print(f"  {i}. {file_path.name} ({file_type})")
     print()
     
     # Get file selection
-    if len(csv_files) == 1:
-        selected_file = csv_files[0]
+    if len(all_files) == 1:
+        selected_file = all_files[0]
         print(f"Auto-selected: {selected_file.name}")
     else:
         try:
             choice = int(input("Select a file (enter number): ").strip())
-            if 1 <= choice <= len(csv_files):
-                selected_file = csv_files[choice - 1]
+            if 1 <= choice <= len(all_files):
+                selected_file = all_files[choice - 1]
             else:
                 print("Invalid selection!")
                 return {}
@@ -506,7 +631,19 @@ def get_user_input() -> Dict[str, any]:
             return {}
     
     input_file = str(selected_file)
+    file_type = selected_file.suffix.lower()
     
+    # Handle different file types
+    if file_type == ".csv":
+        return get_csv_input(selected_file, input_file, lang_prefs)
+    elif file_type == ".xml":
+        return get_xml_input(selected_file, input_file, lang_prefs)
+    else:
+        print(f"Unsupported file type: {file_type}")
+        return {}
+
+def get_csv_input(selected_file, input_file: str, lang_prefs: Dict) -> Dict[str, any]:
+    """Get CSV-specific input parameters."""
     # Get CSV delimiter preference
     print("\nChoose CSV delimiter:")
     print("  1. Comma (,) - Standard CSV format")
@@ -520,9 +657,10 @@ def get_user_input() -> Dict[str, any]:
         delimiter = ","
         print("Selected: Comma (,) delimiter")
     print()
-      # Load CSV to show available columns
+    
+    # Load CSV to show available columns
     try:
-        df_preview = pd.read_csv(input_file, nrows=0, delimiter=delimiter)  # Just read headers
+        df_preview = pd.read_csv(input_file, nrows=0, delimiter=delimiter)
         print(f"\nAvailable columns in '{selected_file.name}':")
         columns_list = list(df_preview.columns)
         for i, col in enumerate(columns_list, 1):
@@ -551,7 +689,8 @@ def get_user_input() -> Dict[str, any]:
                 columns_to_translate.append(columns_list[num - 1])
             else:
                 print(f"Invalid column number: {num}. Must be between 1 and {len(columns_list)}")
-                return {}        
+                return {}
+        
         print(f"Selected columns: {', '.join(columns_to_translate)}")
         
     except ValueError:
@@ -564,6 +703,7 @@ def get_user_input() -> Dict[str, any]:
     print(f"\nOutput will be saved to: {output_file}")
     
     return {
+        'file_type': 'csv',
         'input_file': input_file,
         'output_file': output_file,
         'columns_to_translate': columns_to_translate,
@@ -574,11 +714,30 @@ def get_user_input() -> Dict[str, any]:
         'target_name': lang_prefs['target_name']
     }
 
+def get_xml_input(selected_file, input_file: str, lang_prefs: Dict) -> Dict[str, any]:
+    """Get XML-specific input parameters."""
+    print(f"\nXML file selected: {selected_file.name}")
+    print("XML translation will translate all text content while preserving structure and attributes.")
+    
+    # Generate output file path in target directory
+    output_filename = selected_file.stem + '_translated.xml'
+    output_file = str(TARGET_DIR / output_filename)
+    print(f"Output will be saved to: {output_file}")
+    
+    return {
+        'file_type': 'xml',
+        'input_file': input_file,
+        'output_file': output_file,
+        'source_lang': lang_prefs['source_lang'],
+        'target_lang': lang_prefs['target_lang'],
+        'source_name': lang_prefs['source_name'],
+        'target_name': lang_prefs['target_name']
+    }
 
 def main():
-    """Main function to run the CSV translation script."""
-    print("CSV Translation Script - Multi-Language Support")
-    print("=" * 55)
+    """Main function to run the CSV & XML translation script."""
+    print("CSV & XML Translation Script - Multi-Language Support")
+    print("=" * 60)
     
     # Display translator information
     if TRANSLATOR_TYPE == "deep_translator":
@@ -599,10 +758,16 @@ def main():
     
     # Example usage for automated processing (uncomment and modify as needed)
     # translator = CSVTranslator(source_lang='en', target_lang='nl', delay_between_requests=0.1)
+    # For CSV:
     # success = translator.translate_csv(
     #     input_file=str(SOURCE_DIR / "products.csv"),
     #     output_file=str(TARGET_DIR / "products_translated.csv"),
     #     columns_to_translate=["name", "description"]
+    # )
+    # For XML:
+    # success = translator.translate_xml(
+    #     input_file=str(SOURCE_DIR / "content.xml"),
+    #     output_file=str(TARGET_DIR / "content_translated.xml")
     # )
     
     # Interactive mode
@@ -618,24 +783,38 @@ def main():
         delay_between_requests=0.1
     )
     
-    # Perform translation
+    # Perform translation based on file type
     print(f"\nStarting translation...")
     print(f"Language: {params['source_name']} → {params['target_name']}")
     print(f"Input file: {params['input_file']}")
     print(f"Output file: {params['output_file']}")
-    print(f"Columns to translate: {params['columns_to_translate']}")
-    print(f"CSV delimiter: '{params['delimiter']}'")
-    print("\nThis may take a while depending on the size of your file...")
-      # Generate language-specific suffix
-    language_suffix = get_language_suffix(params['target_lang'])
     
-    success = translator.translate_csv(
-        input_file=params['input_file'],
-        output_file=params['output_file'],
-        columns_to_translate=params['columns_to_translate'],
-        append_suffix=language_suffix,
-        delimiter=params['delimiter']
-    )
+    if params['file_type'] == 'csv':
+        print(f"Columns to translate: {params['columns_to_translate']}")
+        print(f"CSV delimiter: '{params['delimiter']}'")
+        print("\nThis may take a while depending on the size of your file...")
+        
+        # Generate language-specific suffix
+        language_suffix = get_language_suffix(params['target_lang'])
+        
+        success = translator.translate_csv(
+            input_file=params['input_file'],
+            output_file=params['output_file'],
+            columns_to_translate=params['columns_to_translate'],
+            append_suffix=language_suffix,
+            delimiter=params['delimiter']
+        )
+    elif params['file_type'] == 'xml':
+        print("File type: XML")
+        print("\nThis may take a while depending on the size of your file...")
+        
+        success = translator.translate_xml(
+            input_file=params['input_file'],
+            output_file=params['output_file']
+        )
+    else:
+        print("❌ Unsupported file type!")
+        return
     
     if success:
         print(f"\n✅ Translation completed successfully!")

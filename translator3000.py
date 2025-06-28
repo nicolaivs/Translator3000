@@ -1019,31 +1019,52 @@ def get_single_file_input(discovered: Dict[str, List[Path]], lang_prefs: Dict) -
 
 def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path, lang_prefs: Dict) -> Dict[str, any]:
     """Get CSV-specific input parameters for single file mode."""
-    # Get CSV delimiter preference
-    print("\nChoose CSV delimiter:")
-    print("  1. Comma (,) - Standard CSV format")
-    print("  2. Semicolon (;) - European CSV format")
-    delimiter_choice = input("Enter choice (1 or 2, default: 1): ").strip()
     
-    if delimiter_choice == "2":
-        delimiter = ";"
-        print("Selected: Semicolon (;) delimiter")
-    else:
-        delimiter = ","
-        print("Selected: Comma (,) delimiter")
+    # Auto-detect CSV delimiter (same logic as batch mode)
+    print("\nAuto-detecting CSV delimiter...")
+    delimiters = [',', ';']
+    df_preview = None
+    chosen_delimiter = ','
+    
+    for delimiter in delimiters:
+        try:
+            df_test = pd.read_csv(input_file, nrows=5, delimiter=delimiter)
+            if len(df_test.columns) > 1:  # Good indication of correct delimiter
+                df_preview = pd.read_csv(input_file, nrows=0, delimiter=delimiter)
+                chosen_delimiter = delimiter
+                break
+        except:
+            continue
+    
+    if df_preview is None:
+        print("Could not auto-detect delimiter. Trying manual selection...")
+        # Fallback to manual selection
+        print("Choose CSV delimiter:")
+        print("  1. Comma (,) - Standard CSV format")
+        print("  2. Semicolon (;) - European CSV format")
+        delimiter_choice = input("Enter choice (1 or 2, default: 1): ").strip()
+        
+        if delimiter_choice == "2":
+            chosen_delimiter = ";"
+        else:
+            chosen_delimiter = ","
+        
+        try:
+            df_preview = pd.read_csv(input_file, nrows=0, delimiter=chosen_delimiter)
+        except Exception as e:
+            print(f"Error reading CSV file with {chosen_delimiter} delimiter: {e}")
+            return {}
+    
+    # Report detected delimiter
+    delimiter_name = "Semicolon (;) - European CSV format" if chosen_delimiter == ';' else "Comma (,) - Standard CSV format"
+    print(f"✓ Using delimiter: {delimiter_name}")
     print()
-    
-    # Load CSV to show available columns
-    try:
-        df_preview = pd.read_csv(input_file, nrows=0, delimiter=delimiter)
-        print(f"\nAvailable columns in '{selected_file.name}':")
-        columns_list = list(df_preview.columns)
-        for i, col in enumerate(columns_list, 1):
-            print(f"  {i}. {col}")
-    except Exception as e:
-        print(f"Error reading CSV file with {delimiter} delimiter: {e}")
-        print("Try using the other delimiter option.")
-        return {}
+
+    # Show available columns
+    print(f"Available columns in '{selected_file.name}':")
+    columns_list = list(df_preview.columns)
+    for i, col in enumerate(columns_list, 1):
+        print(f"  {i}. {col}")
     
     # Get columns to translate by numbers
     print("\nWhich columns would you like to translate?")
@@ -1071,7 +1092,8 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
     except ValueError:
         print("Invalid input! Please enter numbers separated by commas.")
         return {}
-      # Generate output file path with new naming convention
+    
+    # Generate output file path with new naming convention
     output_filename = generate_output_filename(selected_file.name, lang_prefs['target_lang'], is_root_file=True)
     output_file = str(output_dir / output_filename)
     print(f"\nOutput will be saved to: {output_file}")
@@ -1082,7 +1104,7 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
         'input_file': input_file,
         'output_file': output_file,
         'columns_to_translate': columns_to_translate,
-        'delimiter': delimiter,
+        'delimiter': chosen_delimiter,
         'source_lang': lang_prefs['source_lang'],
         'target_lang': lang_prefs['target_lang'],
         'source_name': lang_prefs['source_name'],
@@ -1093,7 +1115,8 @@ def get_xml_input_single(selected_file: Path, input_file: str, output_dir: Path,
     """Get XML-specific input parameters for single file mode."""
     print(f"\nXML file selected: {selected_file.name}")
     print("XML translation will translate all text content while preserving structure and attributes.")
-      # Generate output file path with new naming convention
+    
+    # Generate output file path with new naming convention
     output_filename = generate_output_filename(selected_file.name, lang_prefs['target_lang'], is_root_file=True)
     output_file = str(output_dir / output_filename)
     print(f"Output will be saved to: {output_file}")

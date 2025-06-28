@@ -103,8 +103,7 @@ class CSVTranslator:
         """
         if TRANSLATOR_TYPE is None:
             raise ImportError("No translation library available. Please install deep-translator or googletrans")
-        
-        # Validate language codes
+          # Validate language codes
         if source_lang not in SUPPORTED_LANGUAGES:
             raise ValueError(f"Unsupported source language: {source_lang}. Supported: {list(SUPPORTED_LANGUAGES.keys())}")
         if target_lang not in SUPPORTED_LANGUAGES:
@@ -117,8 +116,11 @@ class CSVTranslator:
         logger.info(f"Translator configured: {SUPPORTED_LANGUAGES[source_lang]} → {SUPPORTED_LANGUAGES[target_lang]}")
         
         # Initialize the appropriate translator
-        if TRANSLATOR_TYPE == "deep_translator":            self.translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)
+        if TRANSLATOR_TYPE == "deep_translator":
+            # For deep_translator, we create a translator instance with specific languages
+            self.translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)
         elif TRANSLATOR_TYPE == "googletrans":
+            # For googletrans, we create a generic translator instance
             self.translator = Translator()
         else:
             raise ImportError("No valid translator found")
@@ -361,18 +363,20 @@ class CSVTranslator:
             
         try:
             text_clean = text.strip()
-            
-            # Translate using the appropriate library
+              # Translate using the appropriate library
             if TRANSLATOR_TYPE == "deep_translator":
+                # deep_translator: translator was initialized with languages, so only pass text
                 translated = self.translator.translate(text_clean)
             elif TRANSLATOR_TYPE == "googletrans":
+                # googletrans: generic translator, so pass text and language parameters
                 result = self.translator.translate(
                     text_clean, 
                     src=self.source_lang, 
                     dest=self.target_lang
                 )
                 translated = result.text
-            else:                return text
+            else:
+                return text
                 
             # Add delay to avoid rate limiting
             time.sleep(self.delay)
@@ -575,6 +579,15 @@ def main():
     """Main function to run the CSV translation script."""
     print("CSV Translation Script - Multi-Language Support")
     print("=" * 55)
+    
+    # Display translator information
+    if TRANSLATOR_TYPE == "deep_translator":
+        print("🔄 Translation Engine: deep-translator (preferred)")
+    elif TRANSLATOR_TYPE == "googletrans":
+        print("🔄 Translation Engine: googletrans (fallback)")
+    else:
+        print("❌ No translation engine available!")
+        return
     
     # Ensure directories exist
     SOURCE_DIR.mkdir(exist_ok=True)

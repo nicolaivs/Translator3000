@@ -120,8 +120,7 @@ class CSVTranslator:
         self.target_lang = target_lang
         
         logger.info(f"Translator configured: {SUPPORTED_LANGUAGES[source_lang]} -> {SUPPORTED_LANGUAGES[target_lang]}")
-        
-        # Initialize the appropriate translator
+          # Initialize the appropriate translator
         if TRANSLATOR_TYPE == "deep_translator":
             # For deep_translator, we create a translator instance with specific languages
             self.translator = GoogleTranslator(source=self.source_lang, target=self.target_lang)        
@@ -133,17 +132,18 @@ class CSVTranslator:
         
         # Load glossary for custom translations
         self.glossary = self._load_glossary()
-        
+    
     def translate_text(self, text: str) -> str:
         """
         Translate a single text string from source to target language.
         Automatically detects and handles HTML content properly.
+        Applies glossary replacements before AND after translation.
         
         Args:
             text: Text to translate (can contain HTML)
             
         Returns:
-            Translated text with preserved HTML structure
+            Translated text with preserved HTML structure and glossary terms applied
         """
         if not text or pd.isna(text):
             return text
@@ -154,16 +154,22 @@ class CSVTranslator:
             if not text_str:
                 return text
             
+            # Apply glossary replacements BEFORE translation
+            text_with_glossary = self._apply_glossary_replacements(text_str)
+            
             # Check if content contains HTML
-            if self.is_html_content(text_str):
+            if self.is_html_content(text_with_glossary):
                 logger.debug(f"Detected HTML content, using HTML-aware translation")
-                translated = self.translate_html_content(text_str)
+                translated = self.translate_html_content(text_with_glossary)
             else:
                 # Plain text translation
-                translated = self._translate_plain_text(text_str)
+                translated = self._translate_plain_text(text_with_glossary)
+            
+            # Apply glossary replacements AFTER translation to fix any capitalization issues
+            final_result = self._apply_glossary_replacements(translated)
                 
-            logger.debug(f"Translated: '{text_str[:50]}...' -> '{translated[:50]}...'")            
-            return translated
+            logger.debug(f"Translated: '{text_str[:50]}...' -> '{final_result[:50]}...'")
+            return final_result
             
         except Exception as e:
             logger.warning(f"Translation failed for '{text}': {e}")
@@ -690,7 +696,8 @@ def get_language_preferences() -> Dict[str, str]:
     """Get source and target language preferences from user."""
     print("=== Language Configuration ===")
     
-    # Source language selection    print("\nSelect source language (language of your CSV content):")
+    # Source language selection
+    print("\nSelect source language (language of your CSV content):")
     print("  1. English (default)")
     print("  2. Danish")
     source_choice = input("Enter choice (1 or 2, default: 1): ").strip()

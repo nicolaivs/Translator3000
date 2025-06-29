@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 # Add project directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from translator3000 import CSVTranslator
 

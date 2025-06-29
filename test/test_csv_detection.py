@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 # Add project directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 def test_csv_auto_detection():
     """Test CSV delimiter auto-detection logic."""

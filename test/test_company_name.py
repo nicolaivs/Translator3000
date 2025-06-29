@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 # Add project directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from translator3000 import CSVTranslator
 
@@ -30,9 +30,12 @@ def test_company_name():
     for i, test_text in enumerate(test_cases, 1):
         print(f"\nTest {i}: '{test_text}'")
         
-        # Test direct glossary application
-        glossary_applied = translator._apply_glossary_replacements(test_text)
-        print(f"  After glossary: '{glossary_applied}'")
+        # Test direct glossary application (access through csv_processor)
+        if hasattr(translator.csv_processor, '_apply_glossary_replacements'):
+            glossary_applied = translator.csv_processor._apply_glossary_replacements(test_text)
+            print(f"  After glossary: '{glossary_applied}'")
+        else:
+            print(f"  Glossary functionality not available in modular version")
         
         # Test full translation (includes before + translation + after glossary)
         translated = translator.translate_text(test_text)

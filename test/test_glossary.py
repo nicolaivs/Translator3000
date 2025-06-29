@@ -7,7 +7,7 @@ import pandas as pd
 import re
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent
+PROJECT_ROOT = Path(__file__).parent.parent
 
 def load_glossary():
     """Load the glossary CSV file for custom translation terms."""

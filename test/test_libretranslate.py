@@ -7,8 +7,8 @@ import time
 import sys
 from pathlib import Path
 
-# Add the current directory to Python path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add the parent directory to Python path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from translator3000 import CSVTranslator, TRANSLATION_SERVICES
 

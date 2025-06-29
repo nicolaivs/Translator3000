@@ -334,6 +334,6 @@ docker run -p 5000:5000 libretranslate/libretranslate
 - 💰 **No rate limits** - translate as much as you want
 - 🌐 **Works offline** - no internet required
 
-Translator3000 **automatically detects** and prioritizes local instances. When localhost:5000 is available, it becomes the primary translation service!
+Translator3000 **automatically detects** and prioritizes self hosted instances. When self hosted is available, it becomes the primary translation service!
 
 📖 **Detailed setup guide**: See [LOCALHOST_SETUP.md](LOCALHOST_SETUP.md) for complete Docker configuration options.

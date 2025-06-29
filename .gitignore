@@ -17,6 +17,9 @@ target/
 # Glossary file (user-specific)
 glossary.csv
 
+# Configuration file (contains sensitive settings)
+translator3000.config
+
 # Distribution / packaging
 .Python
 build/

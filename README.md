@@ -186,6 +186,12 @@ product_id,name,description,price,category,name_dutch,description_dutch
 
 The script includes a powerful configuration system via the `translator3000.config` file:
 
+### Initial Setup
+
+1. **Copy the sample config**: `copy translator3000.config.sample translator3000.config`
+2. **Edit your settings**: Add API keys and customize performance settings
+3. **Secure by default**: The main config file is git-ignored to protect sensitive settings
+
 ### Performance Settings (Optimized)
 
 - **API Delay**: 5ms between requests (optimized for best performance)

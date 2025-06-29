@@ -213,7 +213,7 @@ def process_csv_file_batch(translator: CSVTranslator, input_file: Path, output_f
         print(f"  🔤 Auto-detected text columns: {text_columns}")
         
         # Generate column suffix based on target language
-        suffix = f"_{get_language_suffix(translator.target_lang)}"
+        suffix = get_language_suffix(translator.target_lang)
         
         # Translate the file - this now returns (success, characters_translated)
         success, chars_translated = translator.translate_csv(
@@ -659,7 +659,7 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
                 print("Invalid input! Please enter column numbers (e.g., '1,3,5' or '2').")
     
     # Generate column suffix based on target language
-    suffix = f"_{get_language_suffix(lang_prefs['target_lang'])}"
+    suffix = get_language_suffix(lang_prefs['target_lang'])
     
     # Generate output file path using the new naming convention
     output_filename = generate_output_filename(selected_file.name, lang_prefs['target_lang'], is_root_file=True)

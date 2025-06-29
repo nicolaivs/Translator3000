@@ -24,21 +24,21 @@ SUPPORTED_LANGUAGES = {
 
 
 def get_language_suffix(lang_code: str) -> str:
-    """Generate a column suffix based on language code."""
-    # Create a mapping for cleaner suffixes
+    """Generate a column suffix based on language code in brackets format."""
+    # Create a mapping for language codes in brackets
     suffix_mapping = {
-        'da': '_danish',
-        'nl': '_dutch',
-        'nl-be': '_flemish',
-        'en': '_english',
-        'fr': '_french',
-        'de': '_german',
-        'it': '_italian',
-        'no': '_norwegian',
-        'es': '_spanish',
-        'sv': '_swedish'
+        'da': '_[DA]',
+        'nl': '_[NL]',
+        'nl-be': '_[NL-BE]',
+        'en': '_[EN]',
+        'fr': '_[FR]',
+        'de': '_[DE]',
+        'it': '_[IT]',
+        'no': '_[NO]',
+        'es': '_[ES]',
+        'sv': '_[SV]'
     }
-    return suffix_mapping.get(lang_code, f'_{lang_code}')
+    return suffix_mapping.get(lang_code, f'_[{lang_code.upper()}]')
 
 
 def get_language_name(lang_code: str) -> str:

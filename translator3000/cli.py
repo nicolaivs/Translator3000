@@ -134,12 +134,6 @@ def process_batch_mode(translator: CSVTranslator, user_input: Dict) -> tuple[boo
     for idx, (file_path, location) in enumerate(files_to_process, 1):
         print(f"\n[{idx}/{total_files}] Processing: {file_path.name}")
         
-        # Count characters in input file
-        file_chars = get_file_character_count(file_path)
-        if file_chars > 0:
-            total_chars += file_chars
-            print(f"  📏 Characters to translate: {file_chars:,}")
-        
         # Generate output directory and filename
         if location == 'root':
             output_dir = TARGET_DIR
@@ -151,11 +145,39 @@ def process_batch_mode(translator: CSVTranslator, user_input: Dict) -> tuple[boo
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / output_filename
         
-        # Process file based on type
+        # Process file based on type and count translatable characters
         success = False
+        file_chars = 0
+        
         if file_path.suffix.lower() == '.csv':
+            # Auto-detect delimiter first
+            delimiter = detect_csv_delimiter(str(file_path))
+            
+            # Auto-detect text columns
+            import pandas as pd
+            df = pd.read_csv(file_path, nrows=5, delimiter=delimiter)
+            text_columns = []
+            for col in df.columns:
+                if df[col].dtype == 'object':  # Text columns
+                    sample_text = df[col].dropna().astype(str).iloc[0] if not df[col].dropna().empty else ""
+                    if len(sample_text) > 10:  # Likely to be translatable text
+                        text_columns.append(col)
+            
+            # Count only translatable characters
+            file_chars = get_translatable_character_count(file_path, text_columns, delimiter)
+            if file_chars > 0:
+                total_chars += file_chars
+                print(f"  📏 Translatable characters: {file_chars:,} (columns: {text_columns})")
+            
             success = process_csv_file_batch(translator, file_path, output_file)
+            
         elif file_path.suffix.lower() == '.xml':
+            # Count only XML text content
+            file_chars = get_translatable_character_count(file_path)
+            if file_chars > 0:
+                total_chars += file_chars
+                print(f"  📏 Translatable characters: {file_chars:,} (text content only)")
+            
             success = translator.translate_xml(str(file_path), str(output_file))
         
         if success:
@@ -222,16 +244,18 @@ def process_single_file_mode(translator: CSVTranslator, user_input: Dict) -> tup
     print(f"📄 Processing: {selected_file.name}")
     print(f"💾 Output: {output_file}")
     
-    # Count characters in input file
-    file_chars = get_file_character_count(selected_file)
-    if file_chars > 0:
-        print(f"📏 Characters to translate: {file_chars:,}")
+    file_chars = 0
     
     if selected_file.suffix.lower() == '.csv':
         # For CSV, use the column and delimiter info from user input
         columns_to_translate = user_input['columns_to_translate']
         delimiter = user_input['delimiter']
         suffix = user_input['append_suffix']
+        
+        # Count only characters in columns that will be translated
+        file_chars = get_translatable_character_count(selected_file, columns_to_translate, delimiter)
+        if file_chars > 0:
+            print(f"📏 Translatable characters: {file_chars:,} (columns: {columns_to_translate})")
         
         print(f"🔤 Translating columns: {columns_to_translate}")
         print(f"📄 Using delimiter: '{delimiter}'")
@@ -244,6 +268,11 @@ def process_single_file_mode(translator: CSVTranslator, user_input: Dict) -> tup
             delimiter=delimiter
         )
     elif selected_file.suffix.lower() == '.xml':
+        # Count only XML text content that will be translated
+        file_chars = get_translatable_character_count(selected_file)
+        if file_chars > 0:
+            print(f"📏 Translatable characters: {file_chars:,} (text content only)")
+        
         print("🏷️  Processing XML file...")
         success = translator.translate_xml(str(selected_file), str(output_file))
     else:
@@ -732,5 +761,67 @@ def get_file_character_count(file_path: Path) -> int:
             return len(ET.tostring(root, encoding='unicode'))
     except Exception as e:
         logger.warning(f"Error counting characters in file {file_path}: {e}")
+    
+    return 0
+
+
+def get_translatable_character_count(file_path: Path, columns_to_translate: List[str] = None, delimiter: str = ",") -> int:
+    """
+    Get the character count of only the text that will actually be translated.
+    
+    Args:
+        file_path: Path to the file
+        columns_to_translate: For CSV files, list of columns that will be translated
+        delimiter: CSV delimiter
+        
+    Returns:
+        Character count of translatable text only
+    """
+    try:
+        if file_path.suffix.lower() == '.csv':
+            if not columns_to_translate:
+                # Auto-detect text columns if not specified
+                import pandas as pd
+                df_sample = pd.read_csv(file_path, nrows=5, delimiter=delimiter)
+                columns_to_translate = []
+                for col in df_sample.columns:
+                    if df_sample[col].dtype == 'object':  # Text columns
+                        sample_text = df_sample[col].dropna().astype(str).iloc[0] if not df_sample[col].dropna().empty else ""
+                        if len(sample_text) > 10:  # Likely to be translatable text
+                            columns_to_translate.append(col)
+            
+            # Count only characters in columns that will be translated
+            import pandas as pd
+            df = pd.read_csv(file_path, delimiter=delimiter)
+            total_chars = 0
+            
+            for col in columns_to_translate:
+                if col in df.columns:
+                    # Count non-null text in this column
+                    text_series = df[col].dropna().astype(str)
+                    total_chars += sum(len(text) for text in text_series)
+            
+            return total_chars
+            
+        elif file_path.suffix.lower() == '.xml':
+            # Count only text content, not XML markup
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+            total_chars = 0
+            
+            def count_text_elements(element):
+                chars = 0
+                if element.text and element.text.strip():
+                    chars += len(element.text.strip())
+                if element.tail and element.tail.strip():
+                    chars += len(element.tail.strip())
+                for child in element:
+                    chars += count_text_elements(child)
+                return chars
+            
+            return count_text_elements(root)
+            
+    except Exception as e:
+        logger.warning(f"Error counting translatable characters in file {file_path}: {e}")
     
     return 0

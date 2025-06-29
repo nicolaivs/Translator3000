@@ -20,9 +20,6 @@ Usage:
 from .translator import CSVTranslator
 from .config import load_config, CONFIG
 
-# Import main from CLI module
-from .cli import main
-
 # Import compatibility constants and functions
 from .compat import (
     get_optimized_translation_services, get_translation_services,
@@ -34,7 +31,7 @@ __version__ = "3.0.0"
 __author__ = "Translator3000 Team"
 
 __all__ = [
-    'CSVTranslator', 'main', 'CONFIG', 'load_config',
+    'CSVTranslator', 'CONFIG', 'load_config',
     'get_optimized_translation_services', 'get_translation_services',
     'TRANSLATION_SERVICES', 'AVAILABLE_TRANSLATORS'
 ]

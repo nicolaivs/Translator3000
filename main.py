@@ -21,7 +21,6 @@ Date: June 2025
 """
 
 # Use the new modular structure
-from translator3000 import main
-
 if __name__ == "__main__":
+    from translator3000.cli import main
     main()

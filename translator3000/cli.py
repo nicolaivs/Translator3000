@@ -7,6 +7,7 @@ Interactive CLI for the Translator3000 translation package.
 
 import sys
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -31,6 +32,9 @@ def main():
         print("=" * 60)
         print()
         
+        # Start overall timing
+        start_time = time.time()
+        
         # Ensure source and target directories exist
         SOURCE_DIR.mkdir(exist_ok=True)
         TARGET_DIR.mkdir(exist_ok=True)
@@ -42,6 +46,10 @@ def main():
             print("❌ Translation cancelled or no valid input provided.")
             return
         
+        # Start warmup timing
+        print("\n🔧 Initializing translator...")
+        warmup_start = time.time()
+        
         # Create translator with selected languages (using config defaults)
         translator = CSVTranslator(
             source_lang=user_input['source_lang'],
@@ -49,15 +57,37 @@ def main():
             # delay_between_requests will use config file value automatically
         )
         
-        print(f"\n🔧 Translator initialized: {user_input['source_name']} -> {user_input['target_name']}")
+        warmup_end = time.time()
+        warmup_time = warmup_end - warmup_start
+        
+        print(f"🔧 Translator initialized: {user_input['source_name']} -> {user_input['target_name']}")
+        print(f"⏱️  Warmup time: {warmup_time:.2f} seconds")
+        
+        # Start processing timing
+        processing_start = time.time()
         
         # Process based on mode
         if user_input['mode'] == 'batch':
             print("\n🚀 Starting batch processing...")
-            success = process_batch_mode(translator, user_input)
+            success, total_chars = process_batch_mode(translator, user_input)
         else:
             print("\n🚀 Starting single file processing...")
-            success = process_single_file_mode(translator, user_input)
+            success, total_chars = process_single_file_mode(translator, user_input)
+        
+        processing_end = time.time()
+        total_runtime = processing_end - start_time
+        processing_time = processing_end - processing_start
+        
+        # Display timing statistics
+        print(f"\n📊 Performance Statistics:")
+        print(f"⏱️  Warmup time: {warmup_time:.2f} seconds")
+        print(f"⏱️  Processing time: {processing_time:.2f} seconds")
+        print(f"⏱️  Total runtime: {total_runtime:.2f} seconds")
+        
+        if total_chars > 0 and processing_time > 0:
+            chars_per_second = total_chars / processing_time
+            print(f"🔤 Characters translated: {total_chars:,}")
+            print(f"⚡ Translation speed: {chars_per_second:.1f} characters/second")
         
         if success:
             print("\n✅ Translation completed successfully!")
@@ -74,7 +104,7 @@ def main():
         print("📋 Check translation.log for details.")
 
 
-def process_batch_mode(translator: CSVTranslator, user_input: Dict) -> bool:
+def process_batch_mode(translator: CSVTranslator, user_input: Dict) -> tuple[bool, int]:
     """Process files in batch mode."""
     discovered = user_input['discovered']
     folder_choice = user_input['folder_choice']
@@ -97,11 +127,18 @@ def process_batch_mode(translator: CSVTranslator, user_input: Dict) -> bool:
     
     success_count = 0
     total_files = len(files_to_process)
+    total_chars = 0
     
     print(f"\n📊 Processing {total_files} files...")
     
     for idx, (file_path, location) in enumerate(files_to_process, 1):
         print(f"\n[{idx}/{total_files}] Processing: {file_path.name}")
+        
+        # Count characters in input file
+        file_chars = get_file_character_count(file_path)
+        if file_chars > 0:
+            total_chars += file_chars
+            print(f"  📏 Characters to translate: {file_chars:,}")
         
         # Generate output directory and filename
         if location == 'root':
@@ -128,7 +165,7 @@ def process_batch_mode(translator: CSVTranslator, user_input: Dict) -> bool:
             print(f"❌ Failed to process {file_path.name}")
     
     print(f"\n📊 Batch processing complete: {success_count}/{total_files} files processed successfully")
-    return success_count > 0
+    return success_count > 0, total_chars
 
 
 def process_csv_file_batch(translator: CSVTranslator, input_file: Path, output_file: Path) -> bool:
@@ -177,13 +214,18 @@ def process_csv_file_batch(translator: CSVTranslator, input_file: Path, output_f
         return False
 
 
-def process_single_file_mode(translator: CSVTranslator, user_input: Dict) -> bool:
+def process_single_file_mode(translator: CSVTranslator, user_input: Dict) -> tuple[bool, int]:
     """Process a single file based on user selection."""
     selected_file = user_input['selected_file']
     output_file = user_input['output_file']
     
     print(f"📄 Processing: {selected_file.name}")
     print(f"💾 Output: {output_file}")
+    
+    # Count characters in input file
+    file_chars = get_file_character_count(selected_file)
+    if file_chars > 0:
+        print(f"📏 Characters to translate: {file_chars:,}")
     
     if selected_file.suffix.lower() == '.csv':
         # For CSV, use the column and delimiter info from user input
@@ -206,9 +248,9 @@ def process_single_file_mode(translator: CSVTranslator, user_input: Dict) -> boo
         success = translator.translate_xml(str(selected_file), str(output_file))
     else:
         print(f"❌ Unsupported file type: {selected_file.suffix}")
-        return False
+        return False, 0
     
-    return success
+    return success, file_chars
 
 
 def detect_csv_delimiter(file_path: str) -> str:
@@ -669,3 +711,26 @@ def generate_output_directory(base_dir: Path, folder_name: str, lang_code: str, 
         # For batch folders: "foldername - Language"
         language_name = get_language_name(lang_code)
         return base_dir / f"{folder_name} - {language_name}"
+
+def get_file_character_count(file_path: Path) -> int:
+    """
+    Get the character count of a file (CSV or XML).
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        Character count
+    """
+    try:
+        if file_path.suffix.lower() == '.csv':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return sum(len(line) for line in f)
+        elif file_path.suffix.lower() == '.xml':
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+            return len(ET.tostring(root, encoding='unicode'))
+    except Exception as e:
+        logger.warning(f"Error counting characters in file {file_path}: {e}")
+    
+    return 0

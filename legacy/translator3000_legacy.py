@@ -1762,10 +1762,15 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
     # Generate column suffix based on target language
     suffix = f"_{get_language_suffix(lang_prefs['target_lang'])}"
     
+    # Generate output file path using the new naming convention
+    output_filename = generate_output_filename(selected_file.name, lang_prefs['target_lang'], is_root_file=True)
+    output_file = output_dir / output_filename
+    print(f"\nOutput will be saved to: {output_file}")
+    
     return {
         'mode': 'single',
         'selected_file': selected_file,
-        'output_file': None,  # To be generated
+        'output_file': output_file,
         'columns_to_translate': columns_to_translate,
         'delimiter': chosen_delimiter,
         'append_suffix': suffix,

@@ -20,8 +20,8 @@ Usage:
 from .translator import CSVTranslator
 from .config import load_config, CONFIG
 
-# For backward compatibility, also import main from legacy
-from translator3000_legacy import main
+# Import main from CLI module
+from .cli import main
 
 # Import compatibility constants and functions
 from .compat import (

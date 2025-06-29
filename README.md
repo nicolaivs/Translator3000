@@ -20,7 +20,7 @@ A powerful Python script for translating CSV file columns and XML text content b
 - 📁 **Organized Workflow**: Automatic source/target folder management
 - ⚙️ **Configurable**: User-tunable performance settings via config file
 - 🔄 **Multi-Service Support**: deep-translator, googletrans, and LibreTranslate with automatic fallback
-- 🏠 **Localhost Priority**: Automatically detects and prioritizes local LibreTranslate instances (8-15x faster)
+- 🏠 **Self hosted Priority**: Automatically detects and prioritizes self hosted LibreTranslate instances (8-15x faster)
 - 🧩 **Modular Architecture**: Clean, maintainable code structure for faster development (NEW in v3.0)
 
 ## Supported Languages

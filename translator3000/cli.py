@@ -612,28 +612,51 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
     
     # Display detected columns for user confirmation
     print(f"\nDetected CSV structure:")
-    for col in df_preview.columns:
-        print(f"  - {col}")
+    for i, col in enumerate(df_preview.columns, 1):
+        print(f"  {i}. {col}")
     
     # Ask user to confirm or re-select columns
     columns_to_translate = list(df_preview.columns)  # Default to all columns
     confirm = input("\nTranslate all columns? (Y/n): ").strip().lower()
     if confirm == 'n':
-        # Let user select specific columns
+        # Let user select specific columns by index
         columns_to_translate = []
+        print("Enter column numbers to translate (e.g., '1,3,5' or '2' for individual columns):")
+        
         while True:
-            col_choice = input("Enter column name (or blank to finish): ")
+            col_choice = input("Enter column numbers (comma-separated, or blank to finish): ").strip()
 
             # Check for empty input and allow finishing
-            if not col_choice.strip():
+            if not col_choice:
                 break
             
-            col_choice = col_choice.strip()
-            
-            if col_choice in df_preview.columns:
-                columns_to_translate.append(col_choice)
-            else:
-                print(f"Column '{col_choice}' not found. Please enter a valid column name.")
+            try:
+                # Parse comma-separated column indices
+                if ',' in col_choice:
+                    # Multiple columns: "1,3,5"
+                    indices = [int(x.strip()) for x in col_choice.split(',')]
+                else:
+                    # Single column: "2"
+                    indices = [int(col_choice)]
+                
+                # Validate indices and convert to column names
+                valid_columns = []
+                for idx in indices:
+                    if 1 <= idx <= len(df_preview.columns):
+                        column_name = df_preview.columns[idx - 1]  # Convert to 0-based index
+                        if column_name not in columns_to_translate:
+                            valid_columns.append(column_name)
+                    else:
+                        print(f"Invalid column number: {idx}. Please enter numbers between 1-{len(df_preview.columns)}.")
+                
+                # Add valid columns
+                if valid_columns:
+                    columns_to_translate.extend(valid_columns)
+                    print(f"Added columns: {valid_columns}")
+                    break
+                    
+            except ValueError:
+                print("Invalid input! Please enter column numbers (e.g., '1,3,5' or '2').")
     
     # Generate column suffix based on target language
     suffix = f"_{get_language_suffix(lang_prefs['target_lang'])}"

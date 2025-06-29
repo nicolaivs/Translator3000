@@ -109,7 +109,9 @@ The script automatically detects available libraries and uses them in order of p
      - **Root directory only**: Process only files in the main source folder
      - **Specific folder only**: Process only files in one selected subfolder  
      - **All files and folders**: Process everything (original batch behavior)
-5. **Follow the prompts** to select columns for CSV files (automatic detection in batch mode)
+5. **Follow the prompts** to select columns for CSV files:
+   - **Single file mode**: Select columns by number (e.g., `2,3` for columns 2 and 3)
+   - **Batch mode**: Automatic column detection based on content analysis
 6. **Find your translated files** in the `target/` folder with matching directory structure
 
 ### Performance Output
@@ -144,7 +146,7 @@ The script provides detailed performance metrics after each translation:
    - Ask you to choose target language from 10 supported options
    - Automatically show CSV and XML files in the `source/` folder
    - Let you choose which file to translate
-   - **For CSV files**: Show available columns with numbers and ask which columns you want to translate (by number, e.g., "1,3" or "2,4,5")
+   - **For CSV files**: Show available columns with numbers and ask which columns you want to translate (by number, e.g., `1,3` or `2` for individual columns)
    - **For XML files**: Automatically translate all text content while preserving structure and attributes
    - Save the translated file to the `target/` folder
 

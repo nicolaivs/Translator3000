@@ -7,7 +7,9 @@ This document describes the new modular architecture of Translator3000, designed
 ```
 translator3000/                 # Main package
 ├── __init__.py                # Package entry point & backward compatibility
+├── cli.py                     # Command line interface with performance benchmarking ✅
 ├── config.py                  # Configuration management
+├── translator.py              # Main translation orchestrator ✅
 ├── services/                  # Translation service implementations
 │   ├── __init__.py
 │   ├── base.py               # Base service interface
@@ -16,12 +18,13 @@ translator3000/                 # Main package
 │   └── libre_trans.py        # LibreTranslate service (planned)
 ├── processors/               # File processing logic
 │   ├── __init__.py
-│   ├── csv_processor.py      # CSV translation logic (planned)
-│   └── xml_processor.py      # XML translation logic (planned)
+│   ├── csv_processor.py      # CSV translation logic with character counting ✅
+│   └── xml_processor.py      # XML translation logic with character counting ✅
 └── utils/                    # Utility functions
     ├── __init__.py
     ├── logging_utils.py      # Logging setup ✅
-    ├── file_utils.py         # File operations (planned)
+    ├── file_utils.py         # File operations ✅
+    ├── language_utils.py     # Language utilities ✅
     └── glossary.py           # Glossary management (planned)
 
 main.py                       # Main entry point (backward compatible)
@@ -51,13 +54,17 @@ translator3000_legacy.py     # Legacy monolithic code (temporary)
 - Package structure created
 - Configuration management extracted (`config.py`)
 - Logging utilities modularized (`utils/logging_utils.py`)
+- Command Line Interface with performance benchmarking (`cli.py`)
+- CSV and XML processors with accurate character counting (`processors/`)
+- File utilities for discovery and management (`utils/file_utils.py`)
+- Language utilities for naming and codes (`utils/language_utils.py`)
+- Main translation orchestrator (`translator.py`)
 - Base service interface defined (`services/base.py`)
 - Backward compatibility maintained
 
 ### 🔄 **In Progress**
 - Service implementations (LibreTranslate, Google Translate, Deep Translator)
-- CSV and XML processors
-- Utility modules (file operations, glossary management)
+- Utility modules (glossary management)
 
 ### 📋 **Planned**
 - Complete migration from legacy module

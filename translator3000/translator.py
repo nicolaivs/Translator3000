@@ -54,7 +54,7 @@ class CSVTranslator:
                      output_file: str, 
                      columns_to_translate: List[str],
                      append_suffix: str = "_translated",
-                     delimiter: str = ",") -> bool:
+                     delimiter: str = ",") -> tuple[bool, int]:
         """
         Translate specified columns in a CSV file.
         
@@ -66,13 +66,13 @@ class CSVTranslator:
             delimiter: CSV delimiter
             
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, characters_translated)
         """
         return self.csv_processor.translate_csv(
             input_file, output_file, columns_to_translate, append_suffix, delimiter
         )
     
-    def translate_xml(self, input_file: str, output_file: str, use_multithreading: bool = True, max_workers: int = None) -> bool:
+    def translate_xml(self, input_file: str, output_file: str, use_multithreading: bool = True, max_workers: int = None) -> tuple[bool, int]:
         """
         Translate text content in XML file while preserving structure and attributes.
         
@@ -83,7 +83,7 @@ class CSVTranslator:
             max_workers: Number of worker threads (uses config if None)
             
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, characters_translated)
         """
         return self.xml_processor.translate_xml(input_file, output_file, use_multithreading, max_workers)
     

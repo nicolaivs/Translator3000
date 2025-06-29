@@ -15,6 +15,7 @@ A powerful Python script for translating CSV file columns and XML text content b
 - 🛡️ **Error Handling**: Graceful handling of translation failures
 - 📊 **Progress Tracking**: Real-time progress updates and logging
 - ⚡ **Performance Optimized**: 5ms API delay (25% faster than previous default) + multithreading
+- 📈 **Performance Benchmarking**: Real-time timing output with warmup time, processing time, and translation speed (characters/second)
 - 🔧 **Auto-Detection**: Automatically detects CSV delimiters and text columns
 - 📁 **Organized Workflow**: Automatic source/target folder management
 - ⚙️ **Configurable**: User-tunable performance settings via config file
@@ -110,6 +111,26 @@ The script automatically detects available libraries and uses them in order of p
      - **All files and folders**: Process everything (original batch behavior)
 5. **Follow the prompts** to select columns for CSV files (automatic detection in batch mode)
 6. **Find your translated files** in the `target/` folder with matching directory structure
+
+### Performance Output
+
+The script provides detailed performance metrics after each translation:
+
+```
+📊 Performance Statistics:
+⏱️  Warmup time: 0.59 seconds
+⏱️  Processing time: 0.54 seconds
+⏱️  Total runtime: 10.43 seconds
+🔤 Characters translated: 178
+⚡ Translation speed: 331.7 characters/second
+```
+
+**What this means:**
+- **Warmup time**: Time to initialize translation services
+- **Processing time**: Actual translation work time
+- **Total runtime**: End-to-end execution time  
+- **Characters translated**: Only the actual text sent to translation API (not file size)
+- **Translation speed**: Real performance in characters per second
 
 ### Interactive Mode (Detailed)
 

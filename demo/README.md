@@ -11,6 +11,27 @@ This folder contains demonstration and benchmark scripts for the Translator3000 
 ### Benchmarking
 - `benchmark_localhost.py` - Localhost vs remote performance comparison
 
+### HTML Processing  
+- `html_translation_demo.py` - HTML content translation examples
+
+## Performance Monitoring
+
+All demo scripts include the new real-time performance benchmarking features:
+- Warmup time measurement
+- Processing time tracking  
+- Character counting (actual translated text only)
+- Translation speed calculation in characters/second
+
+Example output:
+```
+📊 Performance Statistics:
+⏱️  Warmup time: 0.59 seconds
+⏱️  Processing time: 0.54 seconds
+⏱️  Total runtime: 10.43 seconds
+🔤 Characters translated: 178
+⚡ Translation speed: 331.7 characters/second
+```
+
 ## Running Demos
 
 To run any demo script:

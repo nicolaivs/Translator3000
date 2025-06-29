@@ -2,18 +2,19 @@
 
 # CSV Translation Project - Copilot Instructions
 
-This is a Python project for translating CSV file columns from English to Dutch using the Google Translate API.
+This is a Python project for translating CSV file columns and XML content between multiple languages using various translation APIs.
 
 ## Project Context
-- Main script: `main.py` - handles CSV file reading, translation, and writing
-- Translation service: `googletrans` - provides access to Google Translate API
+- Main entry point: `main.py` - entry point that calls the modular CLI
+- CLI interface: `translator3000/cli.py` - interactive CLI with performance benchmarking
+- Main orchestrator: `translator3000/translator.py` - handles translation coordination  
+- Processors: `translator3000/processors/` - CSV and XML processing with accurate character counting
 - Translation service priority: `deep-translator` (primary), `googletrans` (secondary), `LibreTranslate` (privacy fallback)
-- Input files: CSV files located in the `source/` folder
-- Output files: Translated CSV files saved in the `target/` folder
-- Uses `googletrans` library for free Google Translate API access
-- Uses `pandas` for CSV file manipulation
-- Target translation: English -> Dutch (Netherlands)
-- Designed for e-commerce product data translation
+- Input files: CSV/XML files located in the `source/` folder
+- Output files: Translated files saved in the `target/` folder
+- Supports multiple languages and automatic column/element detection
+- Designed for e-commerce product data and content translation
+- Features real-time performance benchmarking and character counting
 
 ## Code Style Guidelines
 - Follow PEP 8 Python style guidelines
@@ -26,10 +27,23 @@ This is a Python project for translating CSV file columns from English to Dutch 
 - Implement rate limiting to avoid API throttling
 - Handle translation failures gracefully by returning original text
 - Log translation progress and errors
-- Support batch processing for large CSV files
-- Preserve original data while adding translated columns
+- Support batch processing for large CSV/XML files
+- Preserve original data while adding translated columns/elements
+- Provide accurate character counting for performance assessment
+- Display real-time timing and benchmarking information
+
+## Performance Features
+- Real-time timing output (warmup, processing, total runtime)
+- Accurate character counting (only actual translated text)
+- Translation speed calculation (characters per second)
+- Multithreading support for large files
+- Configurable API delays and worker counts
 
 ## Dependencies
 - pandas: For CSV file operations
-- googletrans: For translation services
+- googletrans: For translation services  
+- deep-translator: Primary translation service
+- requests: For LibreTranslate API
+- xml.etree.ElementTree: For XML processing
+- concurrent.futures: For multithreading
 - Standard library: logging, time, sys, os, typing

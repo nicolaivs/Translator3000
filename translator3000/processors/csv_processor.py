@@ -155,7 +155,7 @@ class CSVProcessor:
                      output_file: str, 
                      columns_to_translate: List[str],
                      append_suffix: str = "_translated",
-                     delimiter: str = ",") -> bool:
+                     delimiter: str = ",") -> tuple[bool, int]:
         """
         Translate specified columns in a CSV file.
         
@@ -167,7 +167,7 @@ class CSVProcessor:
             delimiter: CSV delimiter
             
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, characters_translated)
         """
         try:
             # Read the CSV file
@@ -179,15 +179,17 @@ class CSVProcessor:
             missing_columns = [col for col in columns_to_translate if col not in df.columns]
             if missing_columns:
                 logger.error(f"Missing columns: {missing_columns}")
-                return False
+                return False, 0
             
             # Create result DataFrame
             result_df = df.copy()
+            total_characters_translated = 0
             
             # Translate each specified column
             for column in columns_to_translate:
                 logger.info(f"Starting translation of column: {column}")
-                translated_column = self.translate_column(df, column)
+                translated_column, column_chars = self.translate_column(df, column)
+                total_characters_translated += column_chars
                 
                 # Add translated column with suffix
                 new_column_name = f"{column}{append_suffix}"
@@ -200,22 +202,28 @@ class CSVProcessor:
             logger.info("Translation completed successfully!")
             logger.info(f"Original columns: {len(df.columns)}")
             logger.info(f"Final columns: {len(result_df.columns)}")
+            logger.info(f"Characters translated: {total_characters_translated}")
             
-            return True
+            return True, total_characters_translated
             
         except FileNotFoundError:
             logger.error(f"Input file not found: {input_file}")
-            return False
+            return False, 0
         except Exception as e:
             logger.error(f"Error during translation: {e}")
-            return False
+            return False, 0
     
-    def translate_column(self, df: pd.DataFrame, column: str) -> List[str]:
+    def translate_column(self, df: pd.DataFrame, column: str) -> tuple[List[str], int]:
         """Translate all texts in a DataFrame column."""
         translated_texts = []
+        total_chars = 0
         
         for i, text in enumerate(df[column]):
             try:
+                # Count characters of original text
+                if text and not pd.isna(text):
+                    total_chars += len(str(text))
+                
                 translated = self.translate_text(text)
                 translated_texts.append(translated)
                 
@@ -227,7 +235,7 @@ class CSVProcessor:
                 logger.warning(f"Translation failed for row {i}: {e}")
                 translated_texts.append(text)  # Use original text if translation fails
         
-        return translated_texts
+        return translated_texts, total_chars
     
     def translate_text(self, text: str) -> str:
         """Translate a single text string with HTML awareness and glossary support."""

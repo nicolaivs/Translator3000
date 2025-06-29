@@ -92,11 +92,44 @@ delay=1  # maximum speed, but watch for rate limiting
 
 ## Monitoring Performance
 
-The script logs performance information:
-- Translation rate
-- Multithreading usage
-- Progress updates
-- Error rates
+The script provides comprehensive real-time performance monitoring with detailed benchmarking output:
+
+### Real-Time Performance Output
+
+After each translation, the script displays:
+
+```
+📊 Performance Statistics:
+⏱️  Warmup time: 0.59 seconds
+⏱️  Processing time: 0.54 seconds  
+⏱️  Total runtime: 10.43 seconds
+🔤 Characters translated: 178
+⚡ Translation speed: 331.7 characters/second
+```
+
+### Performance Metrics Explained
+
+- **Warmup time**: Time to initialize translation services and load configuration
+- **Processing time**: Actual translation work (excluding warmup and overhead)
+- **Total runtime**: Complete end-to-end execution time
+- **Characters translated**: Only counts actual text sent to translation API (not file metadata)
+- **Translation speed**: Real performance in characters per second based on processing time
+
+### Accurate Character Counting
+
+The script now provides accurate character counting that:
+- Only counts translatable text content
+- Excludes CSV headers, XML tags, and file metadata
+- Counts characters from selected columns (CSV) or text elements (XML)
+- Provides realistic performance assessment
+
+### Logged Performance Information
+
+The script also logs detailed performance information to `translation.log`:
+- Translation rate per service
+- Multithreading usage and worker counts
+- Progress updates during large translations
+- Error rates and retry attempts
 
 Watch the logs to ensure your settings are working well for your use case.
 

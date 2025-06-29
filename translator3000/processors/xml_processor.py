@@ -32,7 +32,7 @@ class XMLProcessor:
         self.csv_processor = csv_processor
         self.config = get_config()
     
-    def translate_xml(self, input_file: str, output_file: str, use_multithreading: bool = True, max_workers: int = None) -> bool:
+    def translate_xml(self, input_file: str, output_file: str, use_multithreading: bool = True, max_workers: int = None) -> tuple[bool, int]:
         """
         Translate text content in XML file while preserving structure and attributes.
         
@@ -43,7 +43,7 @@ class XMLProcessor:
             max_workers: Number of worker threads (uses config if None)
             
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, characters_translated)
         """
         # Use config default if not specified
         if max_workers is None:
@@ -54,7 +54,7 @@ class XMLProcessor:
         else:
             return self.translate_xml_sequential(input_file, output_file)
 
-    def translate_xml_sequential(self, input_file: str, output_file: str) -> bool:
+    def translate_xml_sequential(self, input_file: str, output_file: str) -> tuple[bool, int]:
         """
         Translate text content in XML file sequentially.
         
@@ -63,7 +63,7 @@ class XMLProcessor:
             output_file: Path to output XML file
             
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, characters_translated)
         """
         try:
             logger.info(f"Reading XML file: {input_file}")
@@ -83,15 +83,15 @@ class XMLProcessor:
                 # No text to translate, just copy the file
                 logger.info("No text elements found, copying file as-is")
                 tree.write(output_file, encoding='utf-8', xml_declaration=True)
-                return True
+                return True, 0
             
             # Use sequential translation
             logger.info("Using single-threaded XML translation")
-            success = self._translate_xml_elements_sequential(text_elements)
+            success, chars_translated = self._translate_xml_elements_sequential(text_elements)
             
             if not success:
                 logger.error("XML translation failed")
-                return False
+                return False, 0
             
             # Save the translated XML
             logger.info(f"Saving translated XML to: {output_file}")
@@ -100,19 +100,19 @@ class XMLProcessor:
             logger.info(f"XML translation completed successfully!")
             logger.info(f"Translated {total_elements} text elements")
             
-            return True
+            return True, chars_translated
             
         except ET.ParseError as e:
             logger.error(f"XML parsing error: {e}")
-            return False
+            return False, 0
         except FileNotFoundError:
             logger.error(f"Input file not found: {input_file}")
-            return False
+            return False, 0
         except Exception as e:
             logger.error(f"Error during XML translation: {e}")
-            return False
+            return False, 0
     
-    def translate_xml_multithreaded(self, input_file: str, output_file: str, max_workers: int = None) -> bool:
+    def translate_xml_multithreaded(self, input_file: str, output_file: str, max_workers: int = None) -> tuple[bool, int]:
         """
         Translate text content in XML file using multithreading for better performance.
         
@@ -122,7 +122,7 @@ class XMLProcessor:
             max_workers: Number of worker threads (uses config if None)
             
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, characters_translated)
         """
         # Use config default if not specified
         if max_workers is None:
@@ -146,19 +146,19 @@ class XMLProcessor:
                 # No text to translate, just copy the file
                 logger.info("No text elements found, copying file as-is")
                 tree.write(output_file, encoding='utf-8', xml_declaration=True)
-                return True
+                return True, 0
             
             # Use multithreading if we have enough elements
             if total_elements > self.config['multithreading_threshold'] and max_workers > 1:
                 logger.info(f"Using multithreaded XML translation with {max_workers} workers")
-                success = self._translate_xml_elements_multithreaded(text_elements, max_workers)
+                success, chars_translated = self._translate_xml_elements_multithreaded(text_elements, max_workers)
             else:
                 logger.info("Using single-threaded XML translation")
-                success = self._translate_xml_elements_sequential(text_elements)
+                success, chars_translated = self._translate_xml_elements_sequential(text_elements)
             
             if not success:
                 logger.error("XML translation failed")
-                return False
+                return False, 0
             
             # Save the translated XML
             logger.info(f"Saving translated XML to: {output_file}")
@@ -167,17 +167,17 @@ class XMLProcessor:
             logger.info(f"XML translation completed successfully!")
             logger.info(f"Translated {total_elements} text elements")
             
-            return True
+            return True, chars_translated
             
         except ET.ParseError as e:
             logger.error(f"XML parsing error: {e}")
-            return False
+            return False, 0
         except FileNotFoundError:
             logger.error(f"Input file not found: {input_file}")
-            return False
+            return False, 0
         except Exception as e:
             logger.error(f"Error during XML translation: {e}")
-            return False
+            return False, 0
 
     def _collect_text_elements(self, element, text_elements: List):
         """Collect all text elements that need translation."""
@@ -203,13 +203,14 @@ class XMLProcessor:
         for child in element:
             self._collect_text_elements(child, text_elements)
 
-    def _translate_xml_elements_multithreaded(self, text_elements: List, max_workers: int) -> bool:
+    def _translate_xml_elements_multithreaded(self, text_elements: List, max_workers: int) -> tuple[bool, int]:
         """Translate XML text elements using multithreading."""
         try:
             # Thread-safe progress tracking
             progress_lock = threading.Lock()
             progress_counter = [0]
             total_elements = len(text_elements)
+            total_characters = sum(len(text_data['original']) for text_data in text_elements)
             
             def translate_element_text(text_data):
                 """Translate a single text element."""
@@ -277,22 +278,24 @@ class XMLProcessor:
                         element.tail = translated
             
             logger.info(f"Completed multithreaded XML translation")
-            return True
+            return True, total_characters
             
         except Exception as e:
             logger.error(f"Multithreaded XML translation failed: {e}")
-            return False
+            return False, 0
 
-    def _translate_xml_elements_sequential(self, text_elements: List) -> bool:
+    def _translate_xml_elements_sequential(self, text_elements: List) -> tuple[bool, int]:
         """Translate XML text elements sequentially (fallback method)."""
         try:
             total_elements = len(text_elements)
+            total_characters = 0
             
             for idx, text_data in enumerate(text_elements):
                 if (idx + 1) % self.config['progress_interval'] == 0 or (idx + 1) == total_elements:
                     logger.info(f"Progress: {idx + 1}/{total_elements} elements processed")
                 
                 original_text = text_data['original']
+                total_characters += len(original_text)  # Count original characters
                 translated = self.csv_processor.translate_text(original_text)
                 element = text_data['element']
                 
@@ -309,11 +312,11 @@ class XMLProcessor:
                     else:
                         element.tail = translated
             
-            return True
+            return True, total_characters
             
         except Exception as e:
             logger.error(f"Sequential XML translation failed: {e}")
-            return False
+            return False, 0
     
     def _save_xml_pretty(self, tree, output_file: str):
         """Save XML with pretty formatting and CDATA preservation for HTML content."""

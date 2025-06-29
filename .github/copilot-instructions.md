@@ -5,7 +5,11 @@
 This is a Python project for translating CSV file columns from English to Dutch using the Google Translate API.
 
 ## Project Context
-- Main script: `csv_translator.py` - handles CSV file reading, translation, and writing
+- Main script: `main.py` - handles CSV file reading, translation, and writing
+- Translation service: `googletrans` - provides access to Google Translate API
+- Translation service priority: `deep-translator` (primary), `googletrans` (secondary), `LibreTranslate` (privacy fallback)
+- Input files: CSV files located in the `source/` folder
+- Output files: Translated CSV files saved in the `target/` folder
 - Uses `googletrans` library for free Google Translate API access
 - Uses `pandas` for CSV file manipulation
 - Target translation: English -> Dutch (Netherlands)

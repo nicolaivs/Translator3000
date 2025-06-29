@@ -6,6 +6,7 @@ Interactive CLI for the Translator3000 translation package.
 """
 
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -564,9 +565,14 @@ def get_csv_input_single(selected_file: Path, input_file: str, output_dir: Path,
         # Let user select specific columns
         columns_to_translate = []
         while True:
-            col_choice = input("Enter column name (or blank to finish): ").strip()
-            if not col_choice:
+            col_choice = input("Enter column name (or blank to finish): ")
+
+            # Check for empty input and allow finishing
+            if not col_choice.strip():
                 break
+            
+            col_choice = col_choice.strip()
+            
             if col_choice in df_preview.columns:
                 columns_to_translate.append(col_choice)
             else:

@@ -96,13 +96,13 @@ def load_config() -> Dict:
                         
                         if key in config:
                             try:
-                                # Convert to appropriate type
-                                if isinstance(config[key], int):
+                                # Convert to appropriate type (check bool first, since bool is subclass of int)
+                                if isinstance(config[key], bool) or value.lower() in ('true', 'false'):
+                                    config[key] = value.lower() == 'true'
+                                elif isinstance(config[key], int):
                                     config[key] = int(value)
                                 elif isinstance(config[key], float):
                                     config[key] = float(value)
-                                elif isinstance(config[key], bool) or value.lower() in ('true', 'false'):
-                                    config[key] = value.lower() == 'true'
                                 else:
                                     config[key] = value
                             except ValueError:

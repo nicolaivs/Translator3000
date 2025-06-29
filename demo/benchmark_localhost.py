@@ -9,6 +9,11 @@ sys.path.append('.')
 
 def benchmark_localhost_vs_remote():
     """Benchmark localhost LibreTranslate vs other services."""
+import sys
+import os
+# Add parent directory to path so we can import translator3000
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
     from translator3000 import CSVTranslator
     
     print("=" * 60)

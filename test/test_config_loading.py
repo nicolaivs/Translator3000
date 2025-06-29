@@ -4,6 +4,11 @@
 import sys
 sys.path.append('.')
 
+import sys
+import os
+# Add parent directory to path so we can import translator3000
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 from translator3000 import CONFIG
 
 print("Config loaded successfully!")

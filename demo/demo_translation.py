@@ -4,8 +4,12 @@ Demo script to show CSV translation in action.
 This runs the translation automatically on the sample file.
 """
 
-from csv_translator import CSVTranslator
+import sys
 import os
+# Add parent directory to path so we can import translator3000
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from translator3000 import CSVTranslator
 
 def demo_translation():
     """Demo the CSV translation functionality."""

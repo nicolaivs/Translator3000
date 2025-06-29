@@ -7,6 +7,11 @@ import sys
 import os
 sys.path.append(os.getcwd())
 
+import sys
+import os
+# Add parent directory to path so we can import translator3000
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 from translator3000 import CSVTranslator
 
 def test_real_xml():
@@ -15,9 +20,11 @@ def test_real_xml():
     # Initialize translator
     translator = CSVTranslator(source_lang='en', target_lang='da')  # English to Danish
     
-    # Test files
-    input_file = r"c:\Users\nicolai\OneDrive - Easyday ApS\Code\Python\Translator3000\source\sample_products.xml"
-    output_file = r"c:\Users\nicolai\OneDrive - Easyday ApS\Code\Python\Translator3000\target\sample_products_danish.xml"
+    # Test files (using relative paths from the main project directory)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    input_file = os.path.join(project_root, "source", "sample_products.xml")
+    output_file = os.path.join(project_root, "target", "sample_products_danish.xml")
     
     # Create target directory if it doesn't exist
     os.makedirs(os.path.dirname(output_file), exist_ok=True)

@@ -5,12 +5,15 @@ Test script to check how current XML translation handles CDATA and HTML content.
 
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
+import os
 
 def test_xml_parsing():
     """Test how ElementTree handles CDATA content."""
     
-    # Read the test file
-    input_file = r"c:\Users\nicolai\OneDrive - Easyday ApS\Code\Python\Translator3000\source\test_html_xml.xml"
+    # Read the test file (using relative path from the main project directory)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    input_file = os.path.join(project_root, "source", "test_html_xml.xml")
     
     try:
         # Parse the XML file

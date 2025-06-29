@@ -3,6 +3,11 @@
 Simple script to verify configuration loading.
 """
 
+import sys
+import os
+# Add parent directory to path so we can import translator3000
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 from translator3000 import CONFIG, load_config
 
 print("=== Translator3000 Configuration Status ===")

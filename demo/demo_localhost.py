@@ -7,7 +7,11 @@ local LibreTranslate instances for optimal performance.
 
 import time
 import sys
-sys.path.append('.')
+import os
+# Add parent directory to path so we can import translator3000
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from translator3000 import CONFIG, is_libretranslate_localhost_available, get_optimized_translation_services
 
 def demo_service_prioritization():
     """Demonstrate service prioritization with and without localhost detection."""
@@ -17,7 +21,6 @@ def demo_service_prioritization():
     print()
     
     # Show current configuration
-    from translator3000 import CONFIG, is_libretranslate_localhost_available, get_optimized_translation_services
     
     print("Current Configuration:")
     print(f"  localhost_enabled: {CONFIG.get('libretranslate_localhost_enabled', False)}")

@@ -49,6 +49,14 @@ Translator3000/
 │   │   ├── data1_translated.csv
 │   │   └── content1_translated.xml
 │   └── data_translated.csv
+├── test/             # Test scripts for development and validation
+│   ├── README.md     # Test documentation
+│   ├── test_*.py     # Various test scripts
+│   └── ...
+├── demo/             # Demo and benchmark scripts
+│   ├── README.md     # Demo documentation
+│   ├── demo_*.py     # Demonstration scripts
+│   └── benchmark_*.py # Performance benchmarking
 ├── translator3000.py # Main translation script
 ├── requirements.txt  # Python dependencies
 └── README.md        # This file

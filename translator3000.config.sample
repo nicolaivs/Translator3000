@@ -63,30 +63,30 @@ multithreading_threshold=2
 # Services are tried in order until one succeeds
 # 
 # PERFORMANCE COMPARISON:
-#   - localhost libretranslate: ~8-15 translations/sec (fastest when available)
+#   - selfhost libretranslate:  ~8-15 translations/sec (fastest when available)
 #   - deep_translator:          ~4.6 translations/sec (fast, cloud-based)
 #   - googletrans:              ~4.0 translations/sec (good, cloud-based)  
 #   - remote libretranslate:    ~1.0 translations/sec (slower, but privacy-friendly)
 #
-# RECOMMENDED ORDER: Local services first, then fast cloud services, remote privacy services as fallback
+# RECOMMENDED ORDER: Self-hosted services first, then fast cloud services, remote privacy services as fallback
 translation_services=deep_translator,googletrans,libretranslate
 
-# LibreTranslate localhost auto-detection
+# LibreTranslate selfhost auto-detection
 # ----------------------------------------
-# Enable automatic detection of local LibreTranslate instance
-# If localhost:5000 is responding, it will be prioritized over other services
-libretranslate_localhost_enabled=true
+# Enable automatic detection of self-hosted LibreTranslate instance
+# If the selfhost URL is responding, it will be prioritized over other services
+libretranslate_selfhost_enabled=true
 
-# Port to check for local LibreTranslate instance
-libretranslate_localhost_port=5000
+# Port to check for self-hosted LibreTranslate instance
+libretranslate_selfhost_port=5000
 
-# Timeout for localhost detection check (in seconds)
-libretranslate_localhost_timeout=2
+# Timeout for selfhost detection check (in seconds)
+libretranslate_selfhost_timeout=2
 
 # LibreTranslate API endpoints
 # ----------------------------
-# Local LibreTranslate endpoint (Docker default)
-libretranslate_localhost_url=http://localhost:5000/translate
+# Self-hosted LibreTranslate endpoint (change to your server's IP/hostname)
+libretranslate_selfhost_url=http://localhost:5000/translate
 
 # Remote LibreTranslate endpoint (fallback when localhost unavailable)
 libretranslate_url=https://libretranslate.com/translate

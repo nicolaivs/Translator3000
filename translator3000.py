@@ -79,10 +79,10 @@ DEFAULT_CONFIG = {
     'multithreading_threshold': 2,
     'progress_interval': 10,
     'translation_services': 'deep_translator,googletrans,libretranslate',
-    'libretranslate_localhost_enabled': True,
-    'libretranslate_localhost_port': 5000,
-    'libretranslate_localhost_timeout': 2,
-    'libretranslate_localhost_url': 'http://localhost:5000/translate',
+    'libretranslate_selfhost_enabled': True,
+    'libretranslate_selfhost_port': 5000,
+    'libretranslate_selfhost_timeout': 2,
+    'libretranslate_selfhost_url': 'http://localhost:5000/translate',
     'libretranslate_url': 'https://libretranslate.com/translate',
     'libretranslate_api_key': ''
 }
@@ -225,58 +225,63 @@ except ImportError:
     GoogleTranslatorClass = None
     logger.info("googletrans library not available")
 
-def is_libretranslate_localhost_available() -> bool:
-    """Check if LibreTranslate is running on localhost."""
-    if not CONFIG.get('libretranslate_localhost_enabled', True):
+def is_libretranslate_selfhost_available() -> bool:
+    """Check if LibreTranslate is running on self-hosted server."""
+    if not CONFIG.get('libretranslate_selfhost_enabled', True):
         return False
         
     try:
         import requests
-        port = CONFIG.get('libretranslate_localhost_port', 5000)
-        timeout = CONFIG.get('libretranslate_localhost_timeout', 2)
+        selfhost_url = CONFIG.get('libretranslate_selfhost_url', 'http://localhost:5000/translate')
+        timeout = CONFIG.get('libretranslate_selfhost_timeout', 2)
         
+        # Extract base URL for health check
+        if '/translate' in selfhost_url:
+            base_url = selfhost_url.replace('/translate', '')
+        else:
+            base_url = selfhost_url
+            
         # Simple GET request to check if service is responding
-        url = f"http://localhost:{port}"
-        response = requests.get(url, timeout=timeout)
+        response = requests.get(base_url, timeout=timeout)
         
         # Check if it responds with expected LibreTranslate content
         if response.status_code == 200:
             # LibreTranslate usually has "LibreTranslate" in the HTML title or content
             content = response.text.lower()
             if 'libretranslate' in content or 'translate' in content:
-                logger.info(f"✓ Local LibreTranslate detected on localhost:{port}")
+                logger.info(f"✓ Self-hosted LibreTranslate detected at {selfhost_url}")
                 return True
             else:
-                logger.debug(f"Service on localhost:{port} doesn't appear to be LibreTranslate")
+                logger.debug(f"Service at {base_url} doesn't appear to be LibreTranslate")
                 return False
         else:
-            logger.debug(f"Localhost:{port} responded with status {response.status_code}")
+            logger.debug(f"Self-hosted service at {base_url} responded with status {response.status_code}")
             return False
             
     except Exception as e:
-        logger.debug(f"localhost LibreTranslate check failed: {e}")
+        logger.debug(f"selfhost LibreTranslate check failed: {e}")
         return False
 
 
 def get_optimized_translation_services() -> List[str]:
-    """Get translation services in optimal order, prioritizing localhost if available."""
+    """Get translation services in optimal order, prioritizing selfhost if available."""
     base_services = CONFIG.get('translation_services', 'deep_translator,googletrans,libretranslate').split(',')
     base_services = [s.strip() for s in base_services]
     
-    # Check if localhost LibreTranslate is available
-    if is_libretranslate_localhost_available():
-        # If localhost is available, prioritize it by putting it first
+    # Check if selfhost LibreTranslate is available
+    if is_libretranslate_selfhost_available():
+        # If selfhost is available, prioritize it by putting it first
         # and ensure we only have one libretranslate entry
-        optimized_services = ['libretranslate']  # localhost version goes first
+        optimized_services = ['libretranslate']  # selfhost version goes first
         for service in base_services:
             if service != 'libretranslate':  # avoid duplicates
                 optimized_services.append(service)
         
-        logger.info("🚀 Local LibreTranslate prioritized for optimal performance")
+        logger.info("🚀 Self-hosted LibreTranslate prioritized for optimal performance")
         return optimized_services
     else:
-        # No localhost, use configured order
-        logger.info("Using configured service order (no local LibreTranslate detected)")
+        # No selfhost, use configured order
+        logger.info("Using configured service order (no self-hosted LibreTranslate detected)")
         return base_services
 
 
@@ -415,10 +420,10 @@ class CSVTranslator:
         for service in TRANSLATION_SERVICES:
             try:
                 if service == 'libretranslate':
-                    # Choose URL based on localhost availability
-                    if is_libretranslate_localhost_available():
-                        api_url = CONFIG['libretranslate_localhost_url']
-                        logger.info("🚀 Using local LibreTranslate instance for optimal performance")
+                    # Choose URL based on selfhost availability
+                    if is_libretranslate_selfhost_available():
+                        api_url = CONFIG['libretranslate_selfhost_url']
+                        logger.info("🚀 Using self-hosted LibreTranslate instance for optimal performance")
                     else:
                         api_url = CONFIG['libretranslate_url']
                         logger.info("Using remote LibreTranslate service")

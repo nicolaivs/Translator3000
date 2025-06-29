@@ -37,13 +37,22 @@ import concurrent.futures
 import threading
 from collections import deque
 
-# Configure logging with UTF-8 encoding
+# Configure logging with UTF-8 encoding and Unicode-safe console output
+import io
+
+# Create a UTF-8 compatible stdout wrapper for Windows
+if sys.platform.startswith('win'):
+    # On Windows, wrap stdout to handle Unicode characters
+    utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+else:
+    utf8_stdout = sys.stdout
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('translation.log', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(utf8_stdout)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -2003,3 +2012,6 @@ def detect_csv_delimiter(file_path: str) -> str:
     except Exception as e:
         logger.warning(f"Error detecting CSV delimiter: {e}. Using comma as default.")
         return ","
+
+if __name__ == "__main__":
+    main()

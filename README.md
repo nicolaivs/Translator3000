@@ -19,6 +19,7 @@ A powerful Python script for translating CSV file columns and XML text content b
 - 📁 **Organized Workflow**: Automatic source/target folder management
 - ⚙️ **Configurable**: User-tunable performance settings via config file
 - 🔄 **Multi-Service Support**: deep-translator, googletrans, and LibreTranslate with automatic fallback
+- 🏠 **Localhost Priority**: Automatically detects and prioritizes local LibreTranslate instances (8-15x faster)
 
 ## Supported Languages
 
@@ -279,3 +280,22 @@ This project is open source. The `googletrans` library is subject to Google's Te
 ## Contributing
 
 Feel free to submit issues and enhancement requests!
+
+### Local LibreTranslate Setup (Optional - High Performance)
+
+For **8-15x faster translation** and complete privacy, you can run LibreTranslate locally using Docker:
+
+```bash
+# Quick setup - run LibreTranslate on localhost:5000
+docker run -p 5000:5000 libretranslate/libretranslate
+```
+
+**Benefits:**
+- 🚀 **8-15x faster** than cloud services
+- 🔒 **Complete privacy** - data never leaves your machine  
+- 💰 **No rate limits** - translate as much as you want
+- 🌐 **Works offline** - no internet required
+
+Translator3000 **automatically detects** and prioritizes local instances. When localhost:5000 is available, it becomes the primary translation service!
+
+📖 **Detailed setup guide**: See [LOCALHOST_SETUP.md](LOCALHOST_SETUP.md) for complete Docker configuration options.

@@ -68,6 +68,10 @@ DEFAULT_CONFIG = {
     'multithreading_threshold': 2,
     'progress_interval': 10,
     'translation_services': 'deep_translator,googletrans,libretranslate',
+    'libretranslate_localhost_enabled': True,
+    'libretranslate_localhost_port': 5000,
+    'libretranslate_localhost_timeout': 2,
+    'libretranslate_localhost_url': 'http://localhost:5000/translate',
     'libretranslate_url': 'https://libretranslate.com/translate',
     'libretranslate_api_key': ''
 }
@@ -97,12 +101,15 @@ def load_config() -> Dict:
                                     config[key] = int(value)
                                 elif isinstance(config[key], float):
                                     config[key] = float(value)
+                                elif isinstance(config[key], bool) or value.lower() in ('true', 'false'):
+                                    config[key] = value.lower() == 'true'
                                 else:
                                     config[key] = value
                             except ValueError:
                                 logger.warning(f"Invalid config value at line {line_num}: {line}")
                         else:
-                            logger.warning(f"Unknown config key at line {line_num}: {key}")
+                            # Add new config keys that aren't in DEFAULT_CONFIG yet
+                            config[key] = value
             
             logger.info(f"Loaded configuration: delay={config['delay']}ms, max_workers={config['csv_max_workers']}")
         except Exception as e:
@@ -159,13 +166,69 @@ except ImportError:
     AVAILABLE_TRANSLATORS['googletrans'] = False
     logger.info("googletrans library not available")
 
+def is_libretranslate_localhost_available() -> bool:
+    """Check if LibreTranslate is running on localhost."""
+    if not CONFIG.get('libretranslate_localhost_enabled', True):
+        return False
+        
+    try:
+        import requests
+        port = CONFIG.get('libretranslate_localhost_port', 5000)
+        timeout = CONFIG.get('libretranslate_localhost_timeout', 2)
+        
+        # Simple GET request to check if service is responding
+        url = f"http://localhost:{port}"
+        response = requests.get(url, timeout=timeout)
+        
+        # Check if it responds with expected LibreTranslate content
+        if response.status_code == 200:
+            # LibreTranslate usually has "LibreTranslate" in the HTML title or content
+            content = response.text.lower()
+            if 'libretranslate' in content or 'translate' in content:
+                logger.info(f"✓ Local LibreTranslate detected on localhost:{port}")
+                return True
+            else:
+                logger.debug(f"Service on localhost:{port} doesn't appear to be LibreTranslate")
+                return False
+        else:
+            logger.debug(f"Localhost:{port} responded with status {response.status_code}")
+            return False
+            
+    except Exception as e:
+        logger.debug(f"localhost LibreTranslate check failed: {e}")
+        return False
+
+
+def get_optimized_translation_services() -> List[str]:
+    """Get translation services in optimal order, prioritizing localhost if available."""
+    base_services = CONFIG.get('translation_services', 'deep_translator,googletrans,libretranslate').split(',')
+    base_services = [s.strip() for s in base_services]
+    
+    # Check if localhost LibreTranslate is available
+    if is_libretranslate_localhost_available():
+        # If localhost is available, prioritize it by putting it first
+        # and ensure we only have one libretranslate entry
+        optimized_services = ['libretranslate']  # localhost version goes first
+        for service in base_services:
+            if service != 'libretranslate':  # avoid duplicates
+                optimized_services.append(service)
+        
+        logger.info("🚀 Local LibreTranslate prioritized for optimal performance")
+        return optimized_services
+    else:
+        # No localhost, use configured order
+        logger.info("Using configured service order (no local LibreTranslate detected)")
+        return base_services
+
+
 # Determine available translation services based on config preference
 def get_translation_services():
-    """Get available translation services in order of preference."""
-    preferred_order = CONFIG['translation_services'].split(',')
+    """Get available translation services in optimal order, prioritizing localhost if available."""
+    # Get optimized service order (this handles localhost detection and prioritization)
+    optimized_services = get_optimized_translation_services()
     available_services = []
     
-    for service in preferred_order:
+    for service in optimized_services:
         service = service.strip()
         if service in AVAILABLE_TRANSLATORS and AVAILABLE_TRANSLATORS[service]:
             available_services.append(service)
@@ -293,10 +356,18 @@ class CSVTranslator:
         for service in TRANSLATION_SERVICES:
             try:
                 if service == 'libretranslate':
+                    # Choose URL based on localhost availability
+                    if is_libretranslate_localhost_available():
+                        api_url = CONFIG['libretranslate_localhost_url']
+                        logger.info("🚀 Using local LibreTranslate instance for optimal performance")
+                    else:
+                        api_url = CONFIG['libretranslate_url']
+                        logger.info("Using remote LibreTranslate service")
+                    
                     translator = LibreTranslateService(
                         source_lang=self.source_lang,
                         target_lang=self.target_lang,
-                        api_url=CONFIG['libretranslate_url'],
+                        api_url=api_url,
                         api_key=CONFIG['libretranslate_api_key']
                     )
                     self.translators.append(('libretranslate', translator))
@@ -1932,6 +2003,3 @@ def detect_csv_delimiter(file_path: str) -> str:
     except Exception as e:
         logger.warning(f"Error detecting CSV delimiter: {e}. Using comma as default.")
         return ","
-
-if __name__ == "__main__":
-    main()

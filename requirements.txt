@@ -11,8 +11,8 @@ requests>=2.25.0
 # Option 2: More stable deep-translator library - Fast and reliable
 deep-translator>=1.9.0
 
-# Option 2: googletrans (fallback)
-googletrans==3.1.0a0
+# Option 3: googletrans 4.x - Latest version with modern dependencies
+googletrans==4.0.2
 
 # HTML parsing for preserving HTML structure during translation
 beautifulsoup4>=4.12.0

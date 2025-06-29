@@ -28,6 +28,8 @@ import time
 import sys
 import os
 import re
+import asyncio
+import io
 from typing import List, Dict, Optional
 import logging
 from pathlib import Path
@@ -169,10 +171,58 @@ except ImportError:
 # Check for googletrans
 try:
     from googletrans import Translator
+    import googletrans
+    
+    # Check if this is googletrans 4.x (has async methods)
+    googletrans_version = getattr(googletrans, '__version__', '3.x')
+    is_googletrans_4x = googletrans_version.startswith('4.')
+    
+    if is_googletrans_4x:
+        # For googletrans 4.x, create a synchronous wrapper
+        class GoogleTranslator4xWrapper:
+            """Synchronous wrapper for googletrans 4.x async API."""
+            
+            def __init__(self):
+                self.translator = Translator()
+            
+            def translate(self, text: str, src: str, dest: str):
+                """Synchronous translation method that wraps the async API."""
+                try:
+                    # Create a new event loop if none exists
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_closed():
+                            raise RuntimeError("Event loop is closed")
+                    except RuntimeError:
+                        # No event loop exists, create a new one
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    
+                    # Run the async translation
+                    result = loop.run_until_complete(
+                        self.translator.translate(text, src=src, dest=dest)
+                    )
+                    return result
+                except Exception as e:
+                    # If async fails, try the synchronous method (fallback)
+                    try:
+                        return self.translator.translate(text, src=src, dest=dest)
+                    except:
+                        raise e
+        
+        # Use the wrapper for 4.x
+        GoogleTranslatorClass = GoogleTranslator4xWrapper
+        logger.info("googletrans 4.x library available (using async wrapper)")
+    else:
+        # For googletrans 3.x, use the translator directly
+        GoogleTranslatorClass = Translator
+        logger.info("googletrans 3.x library available")
+    
     AVAILABLE_TRANSLATORS['googletrans'] = True
-    logger.info("googletrans library available")
+    
 except ImportError:
     AVAILABLE_TRANSLATORS['googletrans'] = False
+    GoogleTranslatorClass = None
     logger.info("googletrans library not available")
 
 def is_libretranslate_localhost_available() -> bool:
@@ -389,8 +439,7 @@ class CSVTranslator:
                     logger.info(f"✓ deep-translator service initialized")
                 
                 elif service == 'googletrans':
-                    from googletrans import Translator
-                    translator = Translator()
+                    translator = GoogleTranslatorClass()
                     self.translators.append(('googletrans', translator))
                     logger.info(f"✓ googletrans service initialized")
                     

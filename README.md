@@ -15,12 +15,12 @@ A powerful Python script for translating CSV file columns and XML text content b
 - 🛡️ **Error Handling**: Graceful handling of translation failures
 - 📊 **Progress Tracking**: Real-time progress updates and logging
 - ⚡ **Performance Optimized**: 5ms API delay (25% faster than previous default) + multithreading
-- 📈 **Performance Benchmarking**: Real-time timing output with warmup time, processing time, and translation speed (characters/second)
+- 📈 **Performance Benchmarking**: Timing warmup, processing time, and translation speed (character/s)
 - 🔧 **Auto-Detection**: Automatically detects CSV delimiters and text columns
 - 📁 **Organized Workflow**: Automatic source/target folder management
 - ⚙️ **Configurable**: User-tunable performance settings via config file
 - 🔄 **Multi-Service Support**: deep-translator, googletrans, and LibreTranslate with automatic fallback
-- 🏠 **Self hosted Priority**: Automatically detects and prioritizes self hosted LibreTranslate instances (8-15x faster)
+- 🏠 **Self Hosted Priority**: Automatically detects and prioritizes self hosted LibreTranslate instances (8-15x faster)
 - 🧩 **Modular Architecture**: Clean, maintainable code structure for faster development (NEW in v3.0)
 
 ## Supported Languages

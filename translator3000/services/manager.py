@@ -7,7 +7,7 @@ This module handles service selection, optimization, and fallback logic.
 import logging
 from typing import List
 from ..config import get_config
-from .libre_trans import is_libretranslate_selfhost_available
+from .libre_translate import is_libretranslate_selfhost_available
 
 logger = logging.getLogger(__name__)
 

@@ -7,8 +7,8 @@ server detection and automatic fallback to remote services.
 
 import logging
 from typing import Optional
-from .base import BaseTranslationService
-from ..config import get_config
+from translator3000.services.base import BaseTranslationService
+from translator3000.config import get_config
 
 logger = logging.getLogger(__name__)
 

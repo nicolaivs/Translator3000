@@ -6,7 +6,7 @@ This module provides both deep-translator and googletrans service wrappers.
 
 import logging
 from typing import Optional
-from .base import BaseTranslationService
+from translator3000.services.base import BaseTranslationService
 
 logger = logging.getLogger(__name__)
 

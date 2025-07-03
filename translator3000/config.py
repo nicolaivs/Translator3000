@@ -14,11 +14,8 @@ logger = logging.getLogger(__name__)
 # Define project directories
 PROJECT_ROOT = Path(__file__).parent.parent
 # SOURCE_DIR will be initialized after loading config
-TARGET_DIR = PROJECT_ROOT / "target"
+# TARGET_DIR will be initialized after loading config
 # TEST_SOURCE_DIR will be initialized after loading config
-
-# Ensure target directory exists
-TARGET_DIR.mkdir(exist_ok=True)
 
 # Default configuration values
 # Performance optimized settings - see PERFORMANCE.md for detailed analysis
@@ -32,6 +29,7 @@ DEFAULT_CONFIG = {
     'progress_interval': 10,
     'source_directory': '',  # Empty string means use default "source" folder
     'source_directory_test': '',  # Empty string means use default source directory
+    'target_directory': '',  # Empty string means use default "target" folder
     'translation_services': 'deep_translator,googletrans,libretranslate',
     'libretranslate_selfhost_enabled': True,
     'libretranslate_selfhost_port': 5000,
@@ -141,6 +139,24 @@ else:
 # Ensure source directories exist
 SOURCE_DIR.mkdir(exist_ok=True)
 TEST_SOURCE_DIR.mkdir(exist_ok=True)
+
+# Initialize TARGET_DIR based on loaded config
+if _config['target_directory']:
+    # Use custom target directory from config
+    custom_target_path = _config['target_directory']
+    # Handle both absolute and relative paths
+    if Path(custom_target_path).is_absolute():
+        TARGET_DIR = Path(custom_target_path)
+    else:
+        TARGET_DIR = PROJECT_ROOT / custom_target_path
+    logger.info(f"Using custom target directory: {TARGET_DIR}")
+else:
+    # Use default target directory
+    TARGET_DIR = PROJECT_ROOT / "target"
+    logger.info(f"Using default target directory: {TARGET_DIR}")
+
+# Ensure target directory exists
+TARGET_DIR.mkdir(exist_ok=True)
 
 # For backward compatibility
 CONFIG = _config

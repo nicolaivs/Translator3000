@@ -125,12 +125,18 @@ You can specify a custom source directory in the `translator3000.config` file:
 # If specified, this directory will be used instead of the default "source" folder
 source_directory=C:/my_data/translation_files
 
+# Custom target directory for translated files (optional)
+# If specified, this directory will be used instead of the default "target" folder
+target_directory=C:/my_data/translated_output
+
 # Source directory specifically for test scripts (optional)
 source_directory_test=source
 ```
 
-Leave the `source_directory` setting empty to use the default `source/` folder in the project root. 
-The `source_directory_test` setting is used by test and demo scripts and can be set to a different location than your main source directory.
+Leave the directory settings empty to use the default folders in the project root:
+- `source_directory`: The default `source/` folder for input files
+- `target_directory`: The default `target/` folder for translated files
+- `source_directory_test`: Used by test and demo scripts (can be set separately)
 
 ### Performance Output
 

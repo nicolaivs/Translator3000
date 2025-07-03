@@ -69,6 +69,12 @@ source_directory=
 # If not specified, the tests will use the default source directory
 source_directory_test=
 
+# Custom target directory for translated output files (optional)
+# If specified, this directory will be used instead of the default "target" folder
+# Use absolute path or relative path from the project root
+# Leave empty to use the default "target" folder
+target_directory=
+
 # Translation Service Settings
 # ----------------------------
 # Translation service preference order (comma-separated)

@@ -140,6 +140,19 @@ This setting allows you to specify a custom directory for your source files inst
 source_directory=C:/my_data/translation_files
 ```
 
+### Custom Target Directory (`target_directory`)
+
+**Default:** `""` (empty string, uses default "target" folder)
+
+This setting allows you to specify a custom directory for your translated output files instead of using the default "target" folder in the project root.
+
+```ini
+# Custom target directory for translated files (optional)
+# If specified, this directory will be used instead of the default "target" folder
+# Use absolute path or relative path from the project root
+target_directory=C:/my_data/translated_output
+```
+
 ### Test Source Directory (`source_directory_test`)
 
 **Default:** `""` (empty string, uses the value of `source_directory`)

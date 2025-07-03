@@ -124,6 +124,48 @@ Based on testing with actual CSV and XML files:
 - **Large files** (1000+ items): Up to **25x faster** with optimized settings
 
 The combination of reduced delay + multithreading provides dramatic performance improvements while maintaining reliability.
+
+## Directory Settings
+
+### Custom Source Directory (`source_directory`)
+
+**Default:** `""` (empty string, uses default "source" folder)
+
+This setting allows you to specify a custom directory for your source files instead of using the default "source" folder in the project root.
+
+```ini
+# Custom source directory for translation files (optional)
+# If specified, this directory will be used instead of the default "source" folder
+# Use absolute path or relative path from the project root
+source_directory=C:/my_data/translation_files
+```
+
+### Test Source Directory (`source_directory_test`)
+
+**Default:** `""` (empty string, uses the value of `source_directory`)
+
+This setting specifies a separate directory for test and demo files. It's particularly useful when you've set a custom `source_directory` but still want tests and demos to use the original sample files.
+
+```ini
+# Source directory specifically for test scripts (optional)
+# This setting is used by test and demo scripts to locate test files
+source_directory_test=source
+```
+
+#### Usage Notes
+
+- Leave empty to use the same directory as `source_directory`
+- Can use absolute path (e.g., `C:/test_data/files`)
+- Can use relative path from project root (e.g., `test_data/files`)
+- Directory will be created if it doesn't exist
+- Supports both forward slashes (/) and backslashes (\)
+
+## Configuration Examples
+
+### Conservative
+```
+delay=20
+csv_max_workers=2
 xml_max_workers=2
 multithreading_threshold=5
 max_retries=5
@@ -132,8 +174,8 @@ max_retries=5
 ### Balanced (Default)
 ```
 delay=5
-csv_max_workers=4
-xml_max_workers=4
+csv_max_workers=6
+xml_max_workers=6
 multithreading_threshold=2
 max_retries=3
 ```

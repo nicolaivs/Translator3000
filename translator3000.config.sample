@@ -56,6 +56,19 @@ xml_max_workers=6
 # Minimum number of rows/elements required to enable multithreading
 multithreading_threshold=2
 
+# Directory Settings
+# ------------------
+# Custom source directory for translation files (optional)
+# If specified, this directory will be used instead of the default "source" folder
+# Use absolute path or relative path from the project root
+# Leave empty to use the default "source" folder
+source_directory=
+
+# Source directory specifically for test scripts (optional)
+# This setting is used by test and demo scripts to locate test files
+# If not specified, the tests will use the default source directory
+source_directory_test=
+
 # Translation Service Settings
 # ----------------------------
 # Translation service preference order (comma-separated)

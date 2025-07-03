@@ -10,14 +10,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from translator3000 import CSVTranslator
+from translator3000.config import TEST_SOURCE_DIR, TARGET_DIR
 
 def test_single_file_naming():
     """Test that single file translation generates correct output filename."""
     print("=== Testing Single File Output Naming Fix ===\n")
     
-    # Check if we have a sample file
-    source_dir = Path("source")
-    target_dir = Path("target")
+    # Use test source directory from config
+    source_dir = TEST_SOURCE_DIR
+    target_dir = TARGET_DIR
     
     # Ensure directories exist
     source_dir.mkdir(exist_ok=True)
@@ -26,7 +27,7 @@ def test_single_file_naming():
     # Look for sample files
     sample_files = list(source_dir.glob("*.csv"))
     if not sample_files:
-        print("❌ No CSV files found in source/ directory")
+        print(f"❌ No CSV files found in {source_dir} directory")
         print("Please add a CSV file to test with.")
         return
     

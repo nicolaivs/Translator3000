@@ -20,11 +20,10 @@ def test_real_xml():
     # Initialize translator
     translator = CSVTranslator(source_lang='en', target_lang='da')  # English to Danish
     
-    # Test files (using relative paths from the main project directory)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
-    input_file = os.path.join(project_root, "source", "sample_products.xml")
-    output_file = os.path.join(project_root, "target", "sample_products_danish.xml")
+    # Use test source and target directories from config
+    from translator3000.config import TEST_SOURCE_DIR, TARGET_DIR
+    input_file = TEST_SOURCE_DIR / "sample_products.xml"
+    output_file = TARGET_DIR / "sample_products_danish.xml"
     
     # Create target directory if it doesn't exist
     os.makedirs(os.path.dirname(output_file), exist_ok=True)

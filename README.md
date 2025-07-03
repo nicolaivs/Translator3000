@@ -114,6 +114,24 @@ The script automatically detects available libraries and uses them in order of p
    - **Batch mode**: Automatic column detection based on content analysis
 6. **Find your translated files** in the `target/` folder with matching directory structure
 
+### Custom Source Directory
+
+You can specify a custom source directory in the `translator3000.config` file:
+
+```ini
+# Directory Settings
+# ------------------
+# Custom source directory for translation files (optional)
+# If specified, this directory will be used instead of the default "source" folder
+source_directory=C:/my_data/translation_files
+
+# Source directory specifically for test scripts (optional)
+source_directory_test=source
+```
+
+Leave the `source_directory` setting empty to use the default `source/` folder in the project root. 
+The `source_directory_test` setting is used by test and demo scripts and can be set to a different location than your main source directory.
+
 ### Performance Output
 
 The script provides detailed performance metrics after each translation:
@@ -219,9 +237,10 @@ The script includes a powerful configuration system via the `translator3000.conf
 ### Performance Settings (Optimized)
 
 - **API Delay**: 5ms between requests (optimized for best performance)
-- **Multithreading**: 4 workers for CSV/XML processing  
+- **Multithreading**: 6 workers for CSV/XML processing  
 - **Rate Limiting**: Built-in retry logic with exponential backoff
 - **Error Handling**: Graceful fallback to original text on translation failure
+- **Custom Directory**: Optional source_directory setting for custom input location
 
 ### Translation Services
 

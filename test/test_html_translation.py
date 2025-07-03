@@ -20,11 +20,10 @@ def test_xml_html_translation():
     # Initialize translator
     translator = CSVTranslator(source_lang='en', target_lang='no')
     
-    # Test files (using relative paths from the main project directory)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
-    input_file = os.path.join(project_root, "source", "test_html_xml.xml")
-    output_file = os.path.join(project_root, "target", "test_html_xml_translated.xml")
+    # Use test source and target directories from config
+    from translator3000.config import TEST_SOURCE_DIR, TARGET_DIR
+    input_file = TEST_SOURCE_DIR / "test_html_xml.xml"
+    output_file = TARGET_DIR / "test_html_xml_translated.xml"
     
     # Create target directory if it doesn't exist
     os.makedirs(os.path.dirname(output_file), exist_ok=True)

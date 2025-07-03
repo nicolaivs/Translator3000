@@ -396,7 +396,7 @@ def get_batch_processing_input() -> Dict[str, any]:
     
     if total_files == 0:
         print(f"No CSV or XML files found in {SOURCE_DIR} or its subdirectories.")
-        print("Please place your files in the 'source' folder and try again.")
+        print(f"Please place your files in the source directory and try again.")
         return {}
     
     print(f"[TOTAL] Total files found: {total_files}")

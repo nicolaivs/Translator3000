@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 
 # Define project directories
 PROJECT_ROOT = Path(__file__).parent.parent
-SOURCE_DIR = PROJECT_ROOT / "source"
+# SOURCE_DIR will be initialized after loading config
 TARGET_DIR = PROJECT_ROOT / "target"
+# TEST_SOURCE_DIR will be initialized after loading config
 
-# Ensure directories exist
-SOURCE_DIR.mkdir(exist_ok=True)
+# Ensure target directory exists
 TARGET_DIR.mkdir(exist_ok=True)
 
 # Default configuration values
@@ -30,6 +30,8 @@ DEFAULT_CONFIG = {
     'xml_max_workers': 6,
     'multithreading_threshold': 2,
     'progress_interval': 10,
+    'source_directory': '',  # Empty string means use default "source" folder
+    'source_directory_test': '',  # Empty string means use default source directory
     'translation_services': 'deep_translator,googletrans,libretranslate',
     'libretranslate_selfhost_enabled': True,
     'libretranslate_selfhost_port': 5000,
@@ -105,6 +107,40 @@ def get_config() -> Dict[str, Any]:
 
 # Load configuration on module import
 _config = load_config()
+
+# Initialize SOURCE_DIR based on loaded config
+if _config['source_directory']:
+    # Use custom source directory from config
+    custom_path = _config['source_directory']
+    # Handle both absolute and relative paths
+    if Path(custom_path).is_absolute():
+        SOURCE_DIR = Path(custom_path)
+    else:
+        SOURCE_DIR = PROJECT_ROOT / custom_path
+    logger.info(f"Using custom source directory: {SOURCE_DIR}")
+else:
+    # Use default source directory
+    SOURCE_DIR = PROJECT_ROOT / "source"
+    logger.info(f"Using default source directory: {SOURCE_DIR}")
+
+# Initialize TEST_SOURCE_DIR based on loaded config
+if _config['source_directory_test']:
+    # Use custom test source directory from config
+    custom_test_path = _config['source_directory_test']
+    # Handle both absolute and relative paths
+    if Path(custom_test_path).is_absolute():
+        TEST_SOURCE_DIR = Path(custom_test_path)
+    else:
+        TEST_SOURCE_DIR = PROJECT_ROOT / custom_test_path
+    logger.info(f"Using custom test source directory: {TEST_SOURCE_DIR}")
+else:
+    # Use SOURCE_DIR for test files if no specific test directory is provided
+    TEST_SOURCE_DIR = SOURCE_DIR
+    logger.info(f"Using main source directory for tests: {TEST_SOURCE_DIR}")
+
+# Ensure source directories exist
+SOURCE_DIR.mkdir(exist_ok=True)
+TEST_SOURCE_DIR.mkdir(exist_ok=True)
 
 # For backward compatibility
 CONFIG = _config

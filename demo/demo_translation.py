@@ -10,16 +10,16 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from translator3000 import CSVTranslator
+from translator3000.config import TEST_SOURCE_DIR, TARGET_DIR
 
 def demo_translation():
     """Demo the CSV translation functionality."""
     print("CSV Translation Demo")
     print("=" * 30)
     
-    # Check if sample file exists in source folder
-    base_dir = os.path.dirname(os.path.dirname(__file__))  # Go up two levels from demo/
-    input_file = os.path.join(base_dir, "source", "sample_products.csv")
-    if not os.path.exists(input_file):
+    # Check if sample file exists in test source folder
+    input_file = TEST_SOURCE_DIR / "sample_products.csv"
+    if not input_file.exists():
         print(f"❌ Sample file '{input_file}' not found!")
         return
     
@@ -32,8 +32,8 @@ def demo_translation():
       # Translate the sample file (comma-delimited)
     print("Demo 1: Comma-delimited CSV")
     success1 = translator.translate_csv(
-        input_file=os.path.join(base_dir, "source", "sample_products.csv"),
-        output_file=os.path.join(base_dir, "target", "sample_products_demo_translated.csv"),
+        input_file=str(TEST_SOURCE_DIR / "sample_products.csv"),
+        output_file=str(TARGET_DIR / "sample_products_demo_translated.csv"),
         columns_to_translate=["name", "description"],
         delimiter=","
     )
@@ -41,8 +41,8 @@ def demo_translation():
     # Translate the semicolon-delimited sample file
     print("\nDemo 2: Semicolon-delimited CSV")
     success2 = translator.translate_csv(
-        input_file=os.path.join(base_dir, "source", "sample_products_semicolon.csv"),
-        output_file=os.path.join(base_dir, "target", "sample_products_semicolon_translated.csv"),
+        input_file=str(TEST_SOURCE_DIR / "sample_products_semicolon.csv"),
+        output_file=str(TARGET_DIR / "sample_products_semicolon_translated.csv"),
         columns_to_translate=["name", "description"],
         delimiter=";"
     )
@@ -56,7 +56,7 @@ def demo_translation():
         
         # Show a comparison
         import pandas as pd
-        output_file = os.path.join(base_dir, "target", "sample_products_demo_translated.csv")
+        output_file = TARGET_DIR / "sample_products_demo_translated.csv"
         df = pd.read_csv(output_file)
         for idx, row in df.head(2).iterrows():
             print(f"\nProduct {idx + 1}:")

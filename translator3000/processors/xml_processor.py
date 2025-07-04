@@ -189,7 +189,10 @@ class XMLProcessor:
             # Check if this is likely HTML content (common in CDATA sections)
             is_html = False
             if '<' in element.text and '>' in element.text:
-                # Further check the structure - is it a complete HTML element?
+                # Raw HTML tags
+                is_html = True
+            elif '&lt;' in element.text and '&gt;' in element.text:
+                # Escaped HTML entities
                 is_html = True
             
             if is_html:
@@ -201,7 +204,8 @@ class XMLProcessor:
                     'full_text': element.text,
                     'element_path': element_path,  # Store element path for context
                     'tag': element.tag,  # Store the element tag
-                    'is_simple_html': self._is_simple_html_content(element.text.strip())  # Flag for simple HTML
+                    'is_simple_html': self._is_simple_html_content(element.text.strip()),  # Flag for simple HTML
+                    'has_entities': '&lt;' in element.text and '&gt;' in element.text  # Track if it contains HTML entities
                 })
             else:
                 # Regular text content
@@ -402,14 +406,20 @@ class XMLProcessor:
             tag: The element tag (for context)
         """
         try:
+            # First, check if HTML content is escaped and unescape it for processing
+            unescaped_content = html_content
+            if '&lt;' in html_content and '&gt;' in html_content:
+                unescaped_content = html_content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+                logger.debug(f"Unescaped HTML content for translation: {unescaped_content[:50]}...")
+            
             # Simple regex-based HTML parser to extract text content
             import re
             
             # First check if the content is a simple HTML structure with a single tag (like <h1>Text</h1>)
             # This handles cases where we need to translate just a single element regardless of element name
-            if self._is_simple_html_content(html_content):
+            if self._is_simple_html_content(unescaped_content):
                 simple_html_pattern = re.compile(r'^<([a-zA-Z0-9]+)([^>]*)>(.*?)</\1>$', re.DOTALL)
-                simple_match = simple_html_pattern.match(html_content.strip())
+                simple_match = simple_html_pattern.match(unescaped_content.strip())
                 
                 if simple_match:
                     # It's a simple HTML element with a single tag, handle it directly
@@ -442,12 +452,12 @@ class XMLProcessor:
                 return tag + content  # Keep empty content unchanged
             
             # Apply the translation to all matches
-            result = pattern.sub(translate_match, html_content)
+            result = pattern.sub(translate_match, unescaped_content)
             
             # Handle the last piece of text if it exists
-            last_tag_end = html_content.rfind('>')
-            if last_tag_end != -1 and last_tag_end < len(html_content) - 1:
-                last_text = html_content[last_tag_end + 1:]
+            last_tag_end = unescaped_content.rfind('>')
+            if last_tag_end != -1 and last_tag_end < len(unescaped_content) - 1:
+                last_text = unescaped_content[last_tag_end + 1:]
                 if last_text.strip():
                     translated_last = self.csv_processor.translate_text(last_text.strip())
                     result += translated_last
@@ -461,81 +471,101 @@ class XMLProcessor:
     def _save_xml_pretty(self, tree, output_file: str):
         """Save XML with pretty formatting and CDATA preservation for HTML content."""
         try:
-            # First, write the raw XML to a string
+            # First convert the XML tree to a string
             raw_xml = ET.tostring(tree.getroot(), encoding='unicode')
             
-            # Convert the XML to a minidom document for pretty printing
-            dom = minidom.parseString(f'<?xml version="1.0" ?>{raw_xml}')
-            pretty_xml = dom.toprettyxml(indent='    ')
+            # Process the XML to handle entities and CDATA before pretty-printing
+            processed_xml = self._restore_cdata_for_html_content(raw_xml)
             
-            # Clean up extra whitespace that minidom adds
-            lines = [line for line in pretty_xml.split('\n') if line.strip()]
+            # Create a new temporary root element to parse the processed XML
+            # This is because minidom needs a well-formed XML document with one root
+            temp_xml = f'<?xml version="1.0" ?>{processed_xml}'
             
-            # Process the content to handle escaping and CDATA sections
-            processed_lines = []
-            for line in lines:
-                # If line contains a content element with HTML inside (either raw or escaped)
-                if '<Content>' in line and ('&lt;' in line or '<![CDATA[' in line):
-                    # Extract the content
-                    content_start = line.find('<Content>') + len('<Content>')
-                    content_end = line.find('</Content>')
-                    if content_start > 0 and content_end > content_start:
-                        content = line[content_start:content_end]
-                        
-                        # Skip if already in CDATA
-                        if '<![CDATA[' in content:
-                            processed_lines.append(line)
-                            continue
-                            
-                        # If it contains HTML entities, un-escape them for CDATA
-                        if '&lt;' in content and '&gt;' in content:
-                            # Un-escape the HTML entities inside CDATA
-                            unescaped_content = content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
-                            prefix = line[:content_start]
-                            suffix = line[content_end:]
-                            processed_content = f"<![CDATA[{unescaped_content}]]>"
-                            processed_lines.append(f"{prefix}{processed_content}{suffix}")
-                            continue
+            try:
+                # Try to parse with minidom for pretty printing
+                dom = minidom.parseString(temp_xml)
+                pretty_xml = dom.toprettyxml(indent='    ')
                 
-                # Otherwise, keep the line as is
-                processed_lines.append(line)
-            
-            # Write the processed content to file
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(processed_lines))
-                f.write('\n')  # End with newline
+                # Clean up extra whitespace that minidom adds
+                lines = [line for line in pretty_xml.split('\n') if line.strip()]
+                
+                # Write to file
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(lines))
+                    f.write('\n')  # End with newline
+            except Exception as pretty_error:
+                logger.warning(f"Pretty printing failed: {pretty_error}. Writing processed XML directly.")
+                # Fall back to writing the processed XML directly
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write('<?xml version="1.0" ?>\n')
+                    f.write(processed_xml)
                 
         except Exception as e:
-            logger.warning(f"Pretty printing failed: {e}. Saving without formatting.")
-            # Fallback to direct write without pretty formatting
+            logger.warning(f"XML saving failed: {e}. Using basic output.")
+            # Last resort fallback - write the XML directly
             with open(output_file, 'w', encoding='utf-8') as f:
-                f.write('<?xml version="1.0" ?>\n')
-                f.write(ET.tostring(tree.getroot(), encoding='unicode'))
+                tree.write(f, encoding='unicode', xml_declaration=True)
     
     def _restore_cdata_for_html_content(self, xml_str: str) -> str:
-        """Restore CDATA sections for content that contains HTML tags."""
+        """
+        Restore CDATA sections for content that contains HTML tags.
+        
+        This method specifically targets elements containing HTML content and wraps
+        just those elements in CDATA sections, preserving the XML structure.
+        """
         try:
-            # Extract each Content tag that contains HTML and wrap in CDATA
+            import re
+            
+            # First, specifically look for Content tags with HTML
             content_pattern = re.compile(r'<Content>(.*?)</Content>', re.DOTALL)
             
             def process_content(match):
                 content = match.group(1)
-                # Check if it contains HTML tags (either raw or escaped)
-                has_html_tags = ('<' in content and '>' in content) or ('&lt;' in content and '&gt;' in content)
                 
-                if has_html_tags:
-                    # If it contains escaped HTML entities, convert them back to raw HTML inside CDATA
-                    if '&lt;' in content and '&gt;' in content:
-                        # Un-escape the HTML entities inside CDATA
-                        content = content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
-                    
-                    return f'<Content><![CDATA[{content}]]></Content>'
-                return match.group(0)
+                # Check if it contains HTML tags (either raw or escaped)
+                has_raw_html = '<' in content and '>' in content
+                has_escaped_html = '&lt;' in content and '&gt;' in content
+                
+                # If it doesn't contain HTML, return as is
+                if not (has_raw_html or has_escaped_html):
+                    return match.group(0)
+                
+                # If it contains escaped HTML entities, convert them back to raw HTML for CDATA
+                if has_escaped_html:
+                    content = content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+                
+                # Wrap in CDATA section
+                return f'<Content><![CDATA[{content}]]></Content>'
             
             # Process Content elements
-            xml_str = content_pattern.sub(process_content, xml_str)
+            processed_xml = content_pattern.sub(process_content, xml_str)
             
-            return xml_str
+            # Look for other typical HTML-containing elements (Title, Description, etc.)
+            title_pattern = re.compile(r'<Title>(.*?)</Title>', re.DOTALL)
+            
+            def process_title(match):
+                content = match.group(1)
+                
+                # Check if it contains HTML tags
+                has_raw_html = '<' in content and '>' in content
+                has_escaped_html = '&lt;' in content and '&gt;' in content
+                
+                # If it doesn't contain HTML, return as is
+                if not (has_raw_html or has_escaped_html):
+                    return match.group(0)
+                
+                # If it contains escaped HTML entities, convert them back to raw HTML for CDATA
+                if has_escaped_html:
+                    content = content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+                
+                # Wrap in CDATA section
+                return f'<Title><![CDATA[{content}]]></Title>'
+            
+            # Process Title elements
+            processed_xml = title_pattern.sub(process_title, processed_xml)
+            
+            # Now safe to return the processed XML
+            return processed_xml
             
         except Exception as e:
             logger.warning(f"CDATA restoration failed: {e}. Returning original XML.")
@@ -570,6 +600,11 @@ class XMLProcessor:
             return False
             
         import re
+        
+        # First, check if content contains HTML entities that need to be unescaped
+        if '&lt;' in content and '&gt;' in content:
+            content = content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+            
         # Pattern to match content with a single HTML tag pair
         pattern = re.compile(r'^<([a-zA-Z0-9]+)([^>]*)>(.*?)</\1>$', re.DOTALL)
         match = pattern.match(content.strip())

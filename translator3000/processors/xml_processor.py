@@ -344,7 +344,51 @@ class XMLProcessor:
                 unescaped_content = html_content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
                 logger.debug(f"Unescaped HTML content for translation: {unescaped_content[:50]}...")
             
-            # Simple regex-based HTML parser to extract text content
+            # Check if we have multiple paragraphs - this is a special case that needs separate handling
+            if '<p' in unescaped_content or '</p>' in unescaped_content:
+                # Process paragraphs separately to ensure each is translated
+                import re
+                
+                # Pattern to match paragraphs with or without attributes
+                p_pattern = re.compile(r'(<p\s*[^>]*>)(.*?)(</p>)', re.DOTALL)
+                
+                def translate_paragraph(match):
+                    p_tag_start = match.group(1)  # Opening <p> tag with attributes
+                    p_content = match.group(2)    # Content between the tags
+                    p_tag_end = match.group(3)    # Closing </p> tag
+                    
+                    # Only translate if there's content
+                    if p_content and p_content.strip():
+                        # Check if paragraph content has nested HTML
+                        if '<' in p_content and '>' in p_content and not p_content.startswith('<'):
+                            # Has nested HTML, process recursively
+                            translated_content = self._translate_html_content(p_content, element_path, 'p', has_entities)
+                            return f"{p_tag_start}{translated_content}{p_tag_end}"
+                        else:
+                            # Simple text paragraph, translate directly
+                            translated = self.csv_processor.translate_text(p_content.strip())
+                            
+                            # Preserve whitespace around the content
+                            if p_content.startswith(' '):
+                                translated = ' ' + translated
+                            if p_content.endswith(' '):
+                                translated = translated + ' '
+                                
+                            return f"{p_tag_start}{translated}{p_tag_end}"
+                    
+                    # Empty paragraph, return as is
+                    return match.group(0)
+                
+                # Process all paragraphs in the HTML content
+                processed_content = p_pattern.sub(translate_paragraph, unescaped_content)
+                
+                # If the original had HTML entities and wasn't in CDATA, re-escape HTML
+                if has_entities and not self._was_in_cdata(html_content):
+                    processed_content = processed_content.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+                
+                return processed_content
+            
+            # Simple regex-based HTML parser for non-paragraph content
             import re
             
             # First check if the content is a simple HTML structure with a single tag (like <h1>Text</h1>)

@@ -1,12 +1,18 @@
 """
-Test for XML processor with HTML content handling using multithreading.
+Test script for the simplified XML processor with strict structure preservation.
+
+This test verifies that the non-multithreaded XML processor properly handles:
+1. HTML content within CDATA sections
+2. URL elements with proper structure
+3. Entity-escaped HTML tags
+4. Structure preservation for complex nested content
 """
 
 import os
 import sys
 import logging
-from pathlib import Path
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 # Add the parent directory to sys.path to be able to import translator3000 modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -23,6 +29,15 @@ logger = logging.getLogger(__name__)
 def verify_xml_integrity(xml_file):
     """Verify the XML integrity by checking structure and CDATA sections."""
     try:
+        # Open the file and check for CDATA sections
+        with open(xml_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # Check for CDATA preservation
+        if '<![CDATA[' not in content:
+            logger.warning("No CDATA sections found in output!")
+            return False
+            
         # Parse the XML file
         tree = ET.parse(xml_file)
         root = tree.getroot()
@@ -59,13 +74,13 @@ def verify_xml_integrity(xml_file):
         logger.error(f"XML verification failed: {e}")
         return False
 
-def test_xml_html_multithreaded():
-    """Test XML processing with HTML content handling with multithreading."""
+def test_xml_simplified_processor():
+    """Test XML processing with the simplified processor for structure preservation."""
     
     # Test file paths
     source_dir = Path(__file__).parent.parent / "source"
-    source_file = source_dir / "test_html_xml_2.xml"
-    output_file = TARGET_DIR / "test_html_xml_2_multithreaded.xml"
+    source_file = source_dir / "test_banner_issue.xml"
+    output_file = TARGET_DIR / "test_simplified_processor.xml"
     
     # Make sure source file exists
     if not source_file.exists():
@@ -76,13 +91,12 @@ def test_xml_html_multithreaded():
     csv_processor = CSVProcessor("en", "no", delay_between_requests=0.01)
     xml_processor = XMLProcessor(csv_processor)
     
-    # Translate the XML file with multithreading
-    logger.info(f"Testing XML HTML handling with multithreading: {source_file}")
+    # Translate the XML file with the simplified processor
+    logger.info(f"Testing simplified XML processor with: {source_file}")
     success, chars = xml_processor.translate_xml(
         str(source_file), 
         str(output_file),
-        use_multithreading=True,  # Use multithreaded processing
-        max_workers=4             # Use 4 worker threads
+        use_multithreading=False  # Ensure we're using the simplified processor
     )
     
     if success:
@@ -102,4 +116,4 @@ def test_xml_html_multithreaded():
         return False
 
 if __name__ == "__main__":
-    test_xml_html_multithreaded()
+    test_xml_simplified_processor()

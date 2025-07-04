@@ -181,22 +181,43 @@ class XMLProcessor:
 
     def _collect_text_elements(self, element, text_elements: List):
         """Collect all text elements that need translation."""
-        # Collect element text
+        # Special handling for elements with CDATA that contain HTML
         if element.text and element.text.strip():
-            text_elements.append({
-                'element': element,
-                'type': 'text',
-                'original': element.text.strip(),
-                'full_text': element.text
-            })
+            # Get the element path to help identify specific elements
+            element_path = self._get_element_path(element)
+            
+            # Check if this is likely HTML content (common in CDATA sections)
+            if '<' in element.text and '>' in element.text:
+                # Store the element with special type for HTML/CDATA handling
+                text_elements.append({
+                    'element': element,
+                    'type': 'html_content',  # Special marker for HTML content
+                    'original': element.text.strip(),
+                    'full_text': element.text,
+                    'element_path': element_path,  # Store element path for context
+                    'tag': element.tag  # Store the element tag
+                })
+            else:
+                # Regular text content
+                text_elements.append({
+                    'element': element,
+                    'type': 'text',
+                    'original': element.text.strip(),
+                    'full_text': element.text,
+                    'element_path': element_path,  # Store element path for context
+                    'tag': element.tag  # Store the element tag
+                })
         
         # Collect tail text
         if element.tail and element.tail.strip():
+            element_path = self._get_element_path(element)
             text_elements.append({
                 'element': element,
                 'type': 'tail',
                 'original': element.tail.strip(),
-                'full_text': element.tail
+                'full_text': element.tail,
+                'element_path': element_path,  # Store element path for context
+                'tag': element.tag  # Store the element tag
             })
         
         # Process children recursively
@@ -216,7 +237,16 @@ class XMLProcessor:
                 """Translate a single text element."""
                 try:
                     original_text = text_data['original']
-                    translated = self.csv_processor.translate_text(original_text)
+                    element_path = text_data.get('element_path', '')
+                    tag = text_data.get('tag', '')
+                    
+                    # Special handling for HTML content
+                    if text_data['type'] == 'html_content':
+                        # Use our existing method to translate HTML content
+                        translated = self._translate_html_content(original_text, element_path, tag)
+                    else:
+                        # Regular text translation
+                        translated = self.csv_processor.translate_text(original_text)
                     
                     # Update progress in thread-safe manner
                     with progress_lock:
@@ -229,7 +259,7 @@ class XMLProcessor:
                         'translated': translated
                     }
                 except Exception as e:
-                    logger.warning(f"Failed to translate XML text '{original_text[:50]}...': {e}")
+                    logger.warning(f"Failed to translate XML text in {element_path}: {e}")
                     return {
                         'text_data': text_data,
                         'translated': original_text  # Fallback to original
@@ -264,7 +294,20 @@ class XMLProcessor:
                 translated = result['translated']
                 element = text_data['element']
                 
-                if text_data['type'] == 'text':
+                if text_data['type'] == 'html_content':
+                    # For HTML content, we need to preserve the original structure including whitespace
+                    if text_data['full_text'].startswith(' ') or text_data['full_text'].startswith('\n'):
+                        # Preserve leading whitespace
+                        leading_whitespace = ''
+                        for char in text_data['full_text']:
+                            if char in [' ', '\n', '\t']:
+                                leading_whitespace += char
+                            else:
+                                break
+                        element.text = leading_whitespace + translated
+                    else:
+                        element.text = translated
+                elif text_data['type'] == 'text':
                     # Replace element text while preserving whitespace structure
                     if element.text.startswith(' ') or element.text.startswith('\n'):
                         element.text = element.text.replace(text_data['original'], translated)
@@ -296,10 +339,33 @@ class XMLProcessor:
                 
                 original_text = text_data['original']
                 total_characters += len(original_text)  # Count original characters
-                translated = self.csv_processor.translate_text(original_text)
+                element_path = text_data.get('element_path', '')
+                tag = text_data.get('tag', '')
+                
+                # Special handling for HTML content
+                if text_data['type'] == 'html_content':
+                    # Use a function to extract and translate text while preserving HTML tags
+                    translated = self._translate_html_content(original_text, element_path, tag)
+                else:
+                    # Regular text translation
+                    translated = self.csv_processor.translate_text(original_text)
+                
                 element = text_data['element']
                 
-                if text_data['type'] == 'text':
+                if text_data['type'] == 'html_content':
+                    # For HTML content, we need to preserve the original structure including whitespace
+                    if text_data['full_text'].startswith(' ') or text_data['full_text'].startswith('\n'):
+                        # Preserve leading whitespace
+                        leading_whitespace = ''
+                        for char in text_data['full_text']:
+                            if char in [' ', '\n', '\t']:
+                                leading_whitespace += char
+                            else:
+                                break
+                        element.text = leading_whitespace + translated
+                    else:
+                        element.text = translated
+                elif text_data['type'] == 'text':
                     # Replace element text while preserving whitespace structure
                     if element.text.startswith(' ') or element.text.startswith('\n'):
                         element.text = element.text.replace(original_text, translated)
@@ -318,16 +384,83 @@ class XMLProcessor:
             logger.error(f"Sequential XML translation failed: {e}")
             return False, 0
     
+    def _translate_html_content(self, html_content: str, element_path: str = None, tag: str = None) -> str:
+        """
+        Translate HTML content while preserving the structure.
+        
+        This method preserves HTML tags and only translates the text content.
+        
+        Args:
+            html_content: The HTML content to translate
+            element_path: The XML path to the element (for context)
+            tag: The element tag (for context)
+        """
+        try:
+            # Simple regex-based HTML parser to extract text content
+            import re
+            
+            # Special handling for Banner/Title HTML elements with a single tag (like <h1>Text</h1>)
+            # This is to fix the issue where Banner content was being mixed with Description content
+            if "Banner" in element_path or "Title" in element_path:
+                simple_html_pattern = re.compile(r'^<([a-zA-Z0-9]+)([^>]*)>(.*?)</\1>$', re.DOTALL)
+                simple_match = simple_html_pattern.match(html_content.strip())
+                
+                if simple_match:
+                    # It's a simple HTML element, handle it directly
+                    tag_name = simple_match.group(1)
+                    tag_attrs = simple_match.group(2)
+                    content = simple_match.group(3).strip()
+                    
+                    if content:
+                        translated = self.csv_processor.translate_text(content)
+                        logger.info(f"Translated Banner/Title element: '{content}' -> '{translated}'")
+                        return f"<{tag_name}{tag_attrs}>{translated}</{tag_name}>"
+            
+            # For more complex HTML, use the regular pattern matching
+            # This pattern matches HTML tags and content between them
+            pattern = re.compile(r'(<[^>]+>)([^<]*)(?=<)')
+            
+            def translate_match(match):
+                tag = match.group(1)  # The HTML tag
+                content = match.group(2)  # The text content
+                
+                # Only translate non-empty content
+                if content and content.strip():
+                    translated = self.csv_processor.translate_text(content.strip())
+                    # Preserve whitespace structure
+                    if content.startswith(' '):
+                        return tag + ' ' + translated
+                    else:
+                        return tag + translated
+                return tag + content  # Keep empty content unchanged
+            
+            # Apply the translation to all matches
+            result = pattern.sub(translate_match, html_content)
+            
+            # Handle the last piece of text if it exists
+            last_tag_end = html_content.rfind('>')
+            if last_tag_end != -1 and last_tag_end < len(html_content) - 1:
+                last_text = html_content[last_tag_end + 1:]
+                if last_text.strip():
+                    translated_last = self.csv_processor.translate_text(last_text.strip())
+                    result += translated_last
+            
+            return result
+            
+        except Exception as e:
+            logger.warning(f"HTML content translation failed for {element_path}: {e}")
+            return html_content  # Return original on failure
+    
     def _save_xml_pretty(self, tree, output_file: str):
         """Save XML with pretty formatting and CDATA preservation for HTML content."""
-        # Convert to string
-        xml_str = ET.tostring(tree.getroot(), encoding='unicode')
-        
-        # Restore CDATA sections for HTML content
-        xml_str = self._restore_cdata_for_html_content(xml_str)
-        
-        # Parse with minidom for pretty printing
         try:
+            # Convert to string
+            xml_str = ET.tostring(tree.getroot(), encoding='unicode')
+            
+            # Restore CDATA sections for HTML content
+            xml_str = self._restore_cdata_for_html_content(xml_str)
+            
+            # Parse with minidom for pretty printing
             dom = minidom.parseString(xml_str)
             # Get pretty formatted XML with 4-space indentation to match original
             pretty_xml = dom.toprettyxml(indent="    ")
@@ -343,23 +476,55 @@ class XMLProcessor:
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(cleaned_lines))
                 f.write('\n')  # End with newline
-            
+                
         except Exception as e:
             logger.warning(f"Pretty printing failed: {e}. Saving without formatting.")
-            tree.write(output_file, encoding='utf-8', xml_declaration=True)
+            # Fallback to direct write without pretty formatting
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write('<?xml version="1.0" ?>\n')
+                f.write(ET.tostring(tree.getroot(), encoding='unicode'))
     
     def _restore_cdata_for_html_content(self, xml_str: str) -> str:
         """Restore CDATA sections for content that contains HTML tags."""
-        def replace_html_content(match):
-            content = match.group(1)
-            # Check if content contains HTML tags
-            if '<' in content and '>' in content:
-                # Wrap in CDATA
-                return f'<![CDATA[{content}]]>'
-            return content
+        try:
+            # Find elements that likely contain HTML content
+            html_content_elements = ['Content', 'Description', 'Keywords', 'Title']
+            
+            # Prepare a regex pattern for content elements containing HTML
+            for element_name in html_content_elements:
+                # Pattern to match: <Element>content with html tags</Element>
+                pattern = re.compile(f'<{element_name}>(.*?)</{element_name}>', re.DOTALL)
+                
+                def wrap_in_cdata(match):
+                    content = match.group(1)
+                    # Only wrap in CDATA if content contains HTML tags
+                    if '<' in content and '>' in content:
+                        return f"<{element_name}><![CDATA[{content}]]></{element_name}>"
+                    return match.group(0)  # Return unchanged
+                
+                # Apply the replacement
+                xml_str = pattern.sub(wrap_in_cdata, xml_str)
+            
+            return xml_str
+            
+        except Exception as e:
+            logger.warning(f"CDATA restoration failed: {e}. Returning original XML.")
+            return xml_str
+    
+    def _get_element_path(self, element):
+        """Generate a path string to identify the element in the XML tree."""
+        # Just return the tag name and any title attribute for now
+        # This is a simpler implementation that doesn't rely on parent tracking
+        path = element.tag
         
-        # Look for escaped HTML content and wrap in CDATA
-        html_pattern = re.compile(r'&lt;[^&]*&gt;.*?&lt;/[^&]*&gt;', re.DOTALL)
-        xml_str = html_pattern.sub(lambda m: f'<![CDATA[{m.group(0).replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")}]]>', xml_str)
-        
-        return xml_str
+        # Add any identifiable attributes
+        if 'Title' in element.attrib:
+            path += f"[Title='{element.attrib['Title']}']"
+        elif 'Id' in element.attrib:
+            path += f"[Id='{element.attrib['Id']}']"
+        elif 'id' in element.attrib:
+            path += f"[id='{element.attrib['id']}']"
+        elif 'ID' in element.attrib:
+            path += f"[ID='{element.attrib['ID']}']"
+            
+        return path

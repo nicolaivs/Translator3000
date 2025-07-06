@@ -7,7 +7,13 @@ A powerful Python script for translating CSV file columns and XML text content b
 - 🌐 **Multi-Language Support**: Translate between 10 supported languages
 - 🔄 **Dynamic Language Selection**: Choose source and target languages at runtime
 - 📊 **CSV Processing**: Reads and processes CSV files with pandas
-- 🏷️ **XML Processing**: Translates XML text content while preserving structure and attributes
+- 🏷️ **Advanced XML Processing**: Robust HTML-aware XML translation with BeautifulSoup
+  - 🔧 **BeautifulSoup Integration**: Industry-standard HTML parsing for maximum compatibility
+  - 🛡️ **CDATA Preservation**: Maintains all CDATA sections with HTML content intact
+  - 🏗️ **Structure Preservation**: 100% XML structure, attributes, and formatting retained
+  - 🚫 **Ignore Attribute Support**: Respects `ignore="true"` at both XML and HTML levels
+  - 🎯 **Smart Content Detection**: Automatically identifies and handles nested HTML within XML
+  - 🔒 **No HTML Escaping**: HTML content stays as raw HTML, never escaped or corrupted
 - 🚀 **Selective Batch Processing**: Choose to process root files only, specific folders only, or everything
 - 📁 **Recursive Folder Support**: Scans subdirectories and creates matching target structure
 - 🔄 **Batch Translation**: Translates multiple columns efficiently
@@ -229,6 +235,73 @@ product_id,name,description,price,category,name_dutch,description_dutch
 1,Wireless Bluetooth Headphones,High-quality wireless headphones with noise cancellation,99.99,Electronics,Draadloze Bluetooth-hoofdtelefoons,Hoogwaardige draadloze hoofdtelefoons met ruisonderdrukking
 2,Organic Cotton T-Shirt,Comfortable organic cotton t-shirt available in multiple colors,24.99,Clothing,Biologisch katoenen T-shirt,Comfortabel biologisch katoenen t-shirt verkrijgbaar in meerdere kleuren
 ```
+
+## XML Processing with BeautifulSoup
+
+Translator3000 features a **state-of-the-art XML processor** powered by BeautifulSoup for maximum HTML compatibility and robust structure preservation.
+
+### Key XML Processing Features
+
+🔧 **BeautifulSoup Integration**
+- Industry-standard HTML parsing library for maximum compatibility
+- Handles malformed HTML gracefully where regex-based approaches fail
+- Professional-grade DOM manipulation and text node traversal
+
+🛡️ **CDATA Preservation** 
+- Automatically detects and preserves all CDATA sections
+- HTML content within CDATA remains as raw HTML (never escaped)
+- Original CDATA wrapping is maintained for elements that had it
+
+🏗️ **100% Structure Preservation**
+- All XML attributes, namespaces, and formatting retained
+- Element hierarchy and nesting completely preserved
+- Whitespace and indentation maintained where possible
+
+🚫 **Ignore Attribute Support**
+- Respects `ignore="true"` at both XML and HTML levels
+- Nested HTML elements with ignore attributes are also skipped
+- Granular control over what gets translated
+
+🎯 **Smart Content Detection**
+- Automatically identifies HTML content within XML elements
+- Detects elements that originally had CDATA wrapping
+- Handles escaped HTML entities (`&lt;`, `&gt;`) intelligently
+
+### Example XML Processing
+
+**Input XML** (`products.xml`):
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Products>
+    <Product>
+        <Title>Wireless Headphones</Title>
+        <Description><![CDATA[<p>High-quality <strong>wireless headphones</strong> with <em>noise cancellation</em>.</p>]]></Description>
+        <Content ignore="true"><![CDATA[<div class="promo">Special offer!</div>]]></Content>
+    </Product>
+</Products>
+```
+
+**Output XML** (Danish translation):
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Products>
+    <Product>
+        <Title>Trådløse hovedtelefoner</Title>
+        <Description><![CDATA[<p>Høj kvalitet <strong>trådløse hovedtelefoner</strong> med <em>støjreduktion</em>.</p>]]></Description>
+        <Content ignore="true"><![CDATA[<div class="promo">Special offer!</div>]]></Content>
+    </Product>
+</Products>
+```
+
+**Note**: The `Content` element with `ignore="true"` remains untranslated, while the HTML within CDATA is perfectly preserved with translated text content.
+
+### Technical Implementation
+
+- **BeautifulSoup Parsing**: Robust HTML parsing within XML elements
+- **Raw XML Analysis**: Detects original CDATA sections by analyzing raw XML
+- **Text Node Traversal**: Translates only actual text content, preserving all HTML structure
+- **Intelligent Wrapping**: Automatically wraps HTML content in CDATA when needed
+- **Fallback Mechanisms**: Multiple parsing strategies for maximum reliability
 
 ## Configuration
 

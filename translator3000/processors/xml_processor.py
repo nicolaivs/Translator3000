@@ -187,7 +187,9 @@ class XMLProcessor:
             # These elements need special CDATA handling in output
             is_special_element = element_tag_lower in ('content', 'description', 'title', 'banner')
             
-            if is_html:
+            # ALWAYS collect text for translation if it's not empty, regardless of whether it's HTML
+            # The translation method will handle HTML content appropriately
+            if is_html or is_special_element:
                 # Store the element with special type for HTML/CDATA handling
                 text_elements.append({
                     'element': element,

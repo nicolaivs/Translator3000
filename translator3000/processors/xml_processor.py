@@ -419,6 +419,11 @@ class XMLProcessor:
                     # Wrap back in CDATA if needed
                     if has_cdata:
                         return f"<![CDATA[{result}]]>"
+                    
+                    # Only re-escape if original content had entities and wasn't in CDATA
+                    if has_entities and not has_cdata:
+                        result = result.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+                    
                     return result
             
             # Check if we have multiple paragraphs - this is a special case that needs separate handling
@@ -587,7 +592,14 @@ class XMLProcessor:
                 'Description': re.compile(r'<Description\s*>(.*?)</Description\s*>', re.DOTALL),
                 'Url': re.compile(r'<Url\s*([^>]*)>(.*?)</Url\s*>', re.DOTALL),
                 'Banner': re.compile(r'<Banner\s*>(.*?)</Banner\s*>', re.DOTALL),
-                # Add other element types as needed
+                'Teaser': re.compile(r'<Teaser\s*>(.*?)</Teaser\s*>', re.DOTALL),
+                # Add more HTML-containing elements here as needed
+                'Summary': re.compile(r'<Summary\s*>(.*?)</Summary\s*>', re.DOTALL),
+                'Body': re.compile(r'<Body\s*>(.*?)</Body\s*>', re.DOTALL),
+                'Introduction': re.compile(r'<Introduction\s*>(.*?)</Introduction\s*>', re.DOTALL),
+                'Conclusion': re.compile(r'<Conclusion\s*>(.*?)</Conclusion\s*>', re.DOTALL),
+                'Text': re.compile(r'<Text\s*>(.*?)</Text\s*>', re.DOTALL),
+                'HTML': re.compile(r'<HTML\s*>(.*?)</HTML\s*>', re.DOTALL)
             }
             
             processed_xml = xml_str
@@ -606,9 +618,13 @@ class XMLProcessor:
                         
                         # Check if content needs CDATA wrapping
                         if self._should_wrap_in_cdata(content):
-                            # Carefully unescape any HTML entities if needed
-                            unescaped = self._unescape_html(content)
-                            return f'<Url{attributes}><![CDATA[{unescaped}]]></Url>'
+                            # Only unescape if it contains HTML entities
+                            if '&lt;' in content or '&gt;' in content:
+                                unescaped = self._unescape_html(content)
+                                return f'<Url{attributes}><![CDATA[{unescaped}]]></Url>'
+                            else:
+                                # Content has raw HTML tags, wrap directly in CDATA
+                                return f'<Url{attributes}><![CDATA[{content}]]></Url>'
                         return match.group(0)
                     else:
                         content = match.group(1)
@@ -617,11 +633,16 @@ class XMLProcessor:
                         if '<![CDATA[' in content and ']]>' in content:
                             return match.group(0)
                         
-                        # Check if content needs CDATA wrapping
+                        # Check if content needs CDATA wrapping (either has HTML or had CDATA originally)
+                        # Always wrap HTML content in CDATA to ensure proper XML format
                         if self._should_wrap_in_cdata(content):
-                            # Carefully unescape any HTML entities if needed
-                            unescaped = self._unescape_html(content)
-                            return f'<{tag_name}><![CDATA[{unescaped}]]></{tag_name}>'
+                            # Only unescape if it contains HTML entities
+                            if '&lt;' in content or '&gt;' in content:
+                                unescaped = self._unescape_html(content)
+                                return f'<{tag_name}><![CDATA[{unescaped}]]></{tag_name}>'
+                            else:
+                                # Content has raw HTML tags, wrap directly in CDATA
+                                return f'<{tag_name}><![CDATA[{content}]]></{tag_name}>'
                         return match.group(0)
                 
                 # Apply the processing for this tag type
@@ -632,17 +653,27 @@ class XMLProcessor:
         except Exception as e:
             logger.warning(f"HTML content processing failed: {e}. Returning original XML.")
             return xml_str
-    
+
     def _should_wrap_in_cdata(self, content: str) -> bool:
         """
         Determine if content should be wrapped in CDATA.
         
-        Returns True if content contains HTML tags or HTML entities.
+        Returns True if content contains HTML tags, HTML entities, or any characters
+        that might need escaping in XML.
         """
         # Check for HTML tags or entities
-        return (('<' in content and '>' in content) or 
+        if (('<' in content and '>' in content) or 
                 ('&lt;' in content and '&gt;' in content) or
-                ('&amp;' in content))
+                ('&amp;' in content)):
+            return True
+            
+        # Check for other characters that might need CDATA protection
+        xml_special_chars = ['&', '<', '>', '"', "'"]
+        for char in xml_special_chars:
+            if char in content:
+                return True
+                
+        return False
    
     def _unescape_html(self, content: str) -> str:
         """

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root>
+    <Title>This should be translated</Title>
+    <Description ignore="true">This should NOT be translated</Description>
+    <Content>
+        <![CDATA[
+        <h1>This HTML heading should be translated</h1>
+        <p>This paragraph should be translated</p>
+        <div ignore="true">This div content should NOT be translated</div>
+        <ul>
+            <li>This list item should be translated</li>
+            <li ignore="true">This list item should NOT be translated</li>
+        </ul>
+        ]]>
+    </Content>
+    <IgnoredSection ignore="true">
+        <Title>This nested title should NOT be translated</Title>
+        <Description>This nested description should NOT be translated</Description>
+    </IgnoredSection>
+</Root>

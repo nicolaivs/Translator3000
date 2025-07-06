@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root>
+    <Title>Test Document</Title>
+    <Teaser><![CDATA[<p>To maintain the beauty and longevity of your cabinet and kitchen doors, proper cleaning and care are essential.</p>]]></Teaser>
+    <Content>
+        <![CDATA[
+        <h1>Cabinet Care Guide</h1>
+        <p>This is a comprehensive guide for cabinet maintenance.</p>
+        <div>
+            <ul>
+                <li>Clean regularly with mild soap</li>
+                <li>Avoid harsh chemicals</li>
+            </ul>
+        </div>
+        ]]>
+    </Content>
+    <Description><![CDATA[<p>Expert tips for maintaining <strong>cabinet doors</strong> and kitchen surfaces.</p>]]></Description>
+</Root>

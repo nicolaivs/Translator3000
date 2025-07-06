@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root>
+    <Title>Dette skal oversættes</Title>
+    <Description ignore="true">This should NOT be translated</Description>
+    <Content><![CDATA[
+        <h1>Denne HTML -overskrift skal oversættes</h1>
+<p>Dette afsnit skal oversættes</p>
+<div ignore="true">This div content should NOT be translated</div>
+<ul>
+<li>Denne listepost skal oversættes</li>
+<li ignore="true">This list item should NOT be translated</li>
+</ul>]]></Content>
+    <IgnoredSection ignore="true">
+        <Title>This nested title should NOT be translated</Title>
+        <Description>This nested description should NOT be translated</Description>
+    </IgnoredSection>
+</Root>

@@ -129,6 +129,11 @@ class XMLProcessor:
         - HTML content (with special handling)
         - URL elements (with structure preservation)
         """
+        # First check if this element should be ignored
+        if element.get('ignore', '').lower() == 'true':
+            logger.debug(f"Skipping element marked with ignore=true: {element.tag}")
+            return
+            
         # Special handling for elements with CDATA that contain HTML
         if element.text and element.text.strip():
             # Get the element path to help identify specific elements
@@ -173,6 +178,15 @@ class XMLProcessor:
             # Check if this is likely HTML content (common in CDATA sections)
             is_html = False
             has_entities = False
+            has_cdata = False
+            
+            # Check for CDATA sections
+            if '<![CDATA[' in element.text:
+                has_cdata = True
+                # Extract content from CDATA to check for HTML
+                cdata_content = self._extract_cdata_content(element.text)
+                if cdata_content and ('<' in cdata_content and '>' in cdata_content):
+                    is_html = True
             
             # Check for raw HTML tags
             if '<' in element.text and '>' in element.text:
@@ -187,8 +201,7 @@ class XMLProcessor:
             # These elements need special CDATA handling in output
             is_special_element = element_tag_lower in ('content', 'description', 'title', 'banner')
             
-            # ALWAYS collect text for translation if it's not empty, regardless of whether it's HTML
-            # The translation method will handle HTML content appropriately
+            # For special elements or HTML content, use specialized handling
             if is_html or is_special_element:
                 # Store the element with special type for HTML/CDATA handling
                 text_elements.append({
@@ -201,6 +214,7 @@ class XMLProcessor:
                     'is_special_element': is_special_element,  # Flag for CDATA-needing element
                     'is_simple_html': self._is_simple_html_content(element.text.strip()),  # Flag for simple HTML
                     'has_entities': has_entities,  # Track if it contains HTML entities
+                    'has_cdata': has_cdata,  # Track if it contains CDATA sections
                     'original_cdata': self._was_in_cdata(element.text)  # Track original CDATA state
                 })
             else:
@@ -229,6 +243,26 @@ class XMLProcessor:
         # Process children recursively
         for child in element:
             self._collect_text_elements(child, text_elements)
+            
+    def _extract_cdata_content(self, text: str) -> str:
+        """
+        Extract content from CDATA section.
+        
+        Args:
+            text: Text that may contain CDATA sections
+            
+        Returns:
+            Content within CDATA section, or original text if no CDATA found
+        """
+        if '<![CDATA[' in text and ']]>' in text:
+            try:
+                start = text.find('<![CDATA[') + 9
+                end = text.rfind(']]>')
+                if start > 9 and end > start:
+                    return text[start:end]
+            except:
+                pass
+        return text
 
     def _translate_and_apply_sequential(self, text_elements: List) -> Tuple[bool, int]:
         """
@@ -272,6 +306,9 @@ class XMLProcessor:
                         tag,
                         has_entities=text_data.get('has_entities', False)
                     )
+                elif element_type == 'special_text':
+                    # Handle special elements with plain text content
+                    translated = self.csv_processor.translate_text(original_text)
                 elif element_type == 'url':
                     # Special handling for URLs to preserve path structure
                     translated_path = self.csv_processor.translate_text(original_text)
@@ -283,8 +320,8 @@ class XMLProcessor:
                 
                 # Apply the translation based on element type
                 if translated:
-                    if element_type == 'html_content':
-                        # Preserve whitespace in HTML content
+                    if element_type in ('html_content', 'special_text'):
+                        # Preserve whitespace in HTML content and special elements
                         if text_data['full_text'].startswith(' ') or text_data['full_text'].startswith('\n'):
                             # Find and preserve leading whitespace
                             leading_whitespace = ''
@@ -312,7 +349,7 @@ class XMLProcessor:
                             element.tail = element.tail.replace(original_text, translated)
                         else:
                             element.tail = translated
-            
+   
             logger.info(f"Sequential XML translation completed")
             return True, total_characters
             
@@ -333,6 +370,8 @@ class XMLProcessor:
             has_entities: Whether the content contains HTML entities
         """
         try:
+            import re  # Import re at the beginning of the method to ensure it's available everywhere
+            
             # Ensure we're working with a string
             if not isinstance(html_content, str):
                 html_content = str(html_content)
@@ -340,16 +379,52 @@ class XMLProcessor:
             # Normalize line endings
             html_content = html_content.replace('\r\n', '\n')
             
+            # Check for CDATA sections and extract content
+            has_cdata = False
+            cdata_content = None
+            if '<![CDATA[' in html_content and ']]>' in html_content:
+                has_cdata = True
+                cdata_content = self._extract_cdata_content(html_content)
+                if cdata_content:
+                    # Process the content within CDATA
+                    html_content = cdata_content
+            
             # First, check if HTML content is escaped and unescape it for processing
             unescaped_content = html_content
             if has_entities or ('&lt;' in html_content and '&gt;' in html_content):
                 unescaped_content = html_content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
                 logger.debug(f"Unescaped HTML content for translation: {unescaped_content[:50]}...")
             
+            # Special case for simple HTML tags like <h1>Text</h1>
+            simple_html_pattern = re.compile(r'^<([a-zA-Z0-9]+)([^>]*)>(.*?)</\1>$', re.DOTALL)
+            simple_match = simple_html_pattern.match(unescaped_content.strip())
+            
+            if simple_match:
+                # It's a simple HTML element with a single tag, handle it directly
+                tag_name = simple_match.group(1)
+                tag_attrs = simple_match.group(2)
+                content = simple_match.group(3).strip()
+                
+                if content:
+                    # Check if this contains further HTML tags
+                    if '<' in content and '>' in content:
+                        # It has nested HTML, process it recursively
+                        translated_content = self._translate_html_content(content, element_path, tag_name, has_entities)
+                        result = f"<{tag_name}{tag_attrs}>{translated_content}</{tag_name}>"
+                    else:
+                        # It's simple text, translate directly
+                        translated = self.csv_processor.translate_text(content)
+                        result = f"<{tag_name}{tag_attrs}>{translated}</{tag_name}>"
+                        
+                    # Wrap back in CDATA if needed
+                    if has_cdata:
+                        return f"<![CDATA[{result}]]>"
+                    return result
+            
             # Check if we have multiple paragraphs - this is a special case that needs separate handling
             if '<p' in unescaped_content or '</p>' in unescaped_content:
                 # Process paragraphs separately to ensure each is translated
-                import re
+                # Note: 're' is already imported at the beginning of the method
                 
                 # Pattern to match paragraphs with or without attributes
                 p_pattern = re.compile(r'(<p\s*[^>]*>)(.*?)(</p>)', re.DOTALL)
@@ -384,36 +459,26 @@ class XMLProcessor:
                 # Process all paragraphs in the HTML content
                 processed_content = p_pattern.sub(translate_paragraph, unescaped_content)
                 
+                # Wrap back in CDATA if needed
+                if has_cdata:
+                    return f"<![CDATA[{processed_content}]]>"
+                
                 # If the original had HTML entities and wasn't in CDATA, re-escape HTML
-                if has_entities and not self._was_in_cdata(html_content):
+                if has_entities and not has_cdata:
                     processed_content = processed_content.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
                 
                 return processed_content
             
-            # Simple regex-based HTML parser for non-paragraph content
-            import re
-            
-            # First check if the content is a simple HTML structure with a single tag (like <h1>Text</h1>)
-            simple_html_pattern = re.compile(r'^<([a-zA-Z0-9]+)([^>]*)>(.*?)</\1>$', re.DOTALL)
-            simple_match = simple_html_pattern.match(unescaped_content.strip())
-            
-            if simple_match:
-                # It's a simple HTML element with a single tag, handle it directly
-                tag_name = simple_match.group(1)
-                tag_attrs = simple_match.group(2)
-                content = simple_match.group(3).strip()
+            # For non-HTML content or simple text in Title, Description, etc.
+            if not ('<' in unescaped_content and '>' in unescaped_content) or tag.lower() in ('title', 'description', 'banner'):
+                # Just translate the text content directly
+                translated = self.csv_processor.translate_text(unescaped_content.strip())
                 
-                if content:
-                    # Check if this contains further HTML tags
-                    if '<' in content and '>' in content:
-                        # It has nested HTML, process it recursively
-                        translated_content = self._translate_html_content(content, element_path, tag, has_entities)
-                        return f"<{tag_name}{tag_attrs}>{translated_content}</{tag_name}>"
-                    else:
-                        # It's simple text, translate directly
-                        translated = self.csv_processor.translate_text(content)
-                        logger.debug(f"Translated simple element: '{content[:30]}...' -> '{translated[:30]}...'")
-                        return f"<{tag_name}{tag_attrs}>{translated}</{tag_name}>"
+                # Wrap back in CDATA if needed
+                if has_cdata:
+                    return f"<![CDATA[{translated}]]>"
+                
+                return translated
             
             # For more complex HTML, use a pattern that handles HTML tags and content between them
             pattern = re.compile(r'(<[^>]+>)([^<]*)(?=<|$)', re.DOTALL)
@@ -424,7 +489,7 @@ class XMLProcessor:
                 
                 # Only translate non-empty content
                 if content and content.strip():
-                    # Encode special characters if present to avoid encoding issues
+                    # Translate the content
                     translated = self.csv_processor.translate_text(content.strip())
                     
                     # Preserve whitespace structure
@@ -440,9 +505,13 @@ class XMLProcessor:
             # Apply the translation to all matches
             result = pattern.sub(translate_match, unescaped_content)
             
+            # Wrap back in CDATA if needed
+            if has_cdata:
+                return f"<![CDATA[{result}]]>"
+            
             # Important: if the original content had HTML entities, we need to keep the result in 
             # the same format for consistency - this avoids mixups with raw HTML
-            if has_entities and not self._was_in_cdata(html_content):
+            if has_entities and not has_cdata:
                 # Re-escape any raw HTML tags that might be in the result
                 result = result.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
             
@@ -451,7 +520,7 @@ class XMLProcessor:
         except Exception as e:
             logger.warning(f"HTML content translation failed for {element_path}: {e}")
             return html_content  # Return original on failure
-    
+
     def _save_xml_pretty(self, tree, output_file: str):
         """
         Save XML with pretty formatting and CDATA preservation for HTML content.
@@ -531,6 +600,10 @@ class XMLProcessor:
                         attributes = match.group(1)
                         content = match.group(2)
                         
+                        # Already has CDATA, leave it as is
+                        if '<![CDATA[' in content and ']]>' in content:
+                            return match.group(0)
+                        
                         # Check if content needs CDATA wrapping
                         if self._should_wrap_in_cdata(content):
                             # Carefully unescape any HTML entities if needed
@@ -539,6 +612,10 @@ class XMLProcessor:
                         return match.group(0)
                     else:
                         content = match.group(1)
+                        
+                        # Already has CDATA, leave it as is
+                        if '<![CDATA[' in content and ']]>' in content:
+                            return match.group(0)
                         
                         # Check if content needs CDATA wrapping
                         if self._should_wrap_in_cdata(content):
@@ -566,7 +643,7 @@ class XMLProcessor:
         return (('<' in content and '>' in content) or 
                 ('&lt;' in content and '&gt;' in content) or
                 ('&amp;' in content))
-    
+   
     def _unescape_html(self, content: str) -> str:
         """
         Unescape HTML entities in content.

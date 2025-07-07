@@ -129,8 +129,9 @@ class XMLProcessor:
         """
         Collect all text elements that need translation with robust structure detection.
         """
-        # Check if this element should be ignored
-        if element.get('ignore', '').lower() == 'true':
+        # Check if this element should be ignored (case-insensitive)
+        ignore_value = element.get('ignore', '') or element.get('Ignore', '')
+        if ignore_value.lower() == 'true':
             logger.debug(f"Skipping element marked with ignore=true: {element.tag}")
             return
             
@@ -428,7 +429,9 @@ class XMLProcessor:
                     current = element.parent
                     
                     while current and isinstance(current, Tag):
-                        if current.get('ignore', '').lower() == 'true':
+                        # Check for ignore attribute (case-insensitive)
+                        ignore_value = current.get('ignore', '') or current.get('Ignore', '')
+                        if ignore_value.lower() == 'true':
                             should_ignore = True
                             break
                         current = current.parent
@@ -509,8 +512,9 @@ class XMLProcessor:
         # Enhanced pattern to match complete tag structures with content
         def should_translate_tag_content(preceding_tag):
             """Check if content within a tag should be translated."""
-            # Look for ignore attribute in the preceding tag
-            if 'ignore="true"' in preceding_tag.lower() or "ignore='true'" in preceding_tag.lower():
+            # Look for ignore attribute in the preceding tag (case-insensitive)
+            if ('ignore="true"' in preceding_tag.lower() or "ignore='true'" in preceding_tag.lower() or
+                'Ignore="True"' in preceding_tag or "Ignore='True'" in preceding_tag):
                 return False
             return True
         
@@ -633,6 +637,10 @@ class XMLProcessor:
                 dom = minidom.parseString(f'<?xml version="1.0" encoding="utf-8"?>\n{processed_xml}')
                 pretty_xml = dom.toprettyxml(indent='    ', encoding='utf-8').decode('utf-8')
                 
+                # Fix HTML entity escaping inside CDATA sections
+                # minidom incorrectly escapes & to &amp; even inside CDATA
+                pretty_xml = self._fix_cdata_escaping(pretty_xml)
+                
                 # Clean up excessive whitespace from minidom
                 lines = []
                 for line in pretty_xml.split('\n'):
@@ -656,6 +664,24 @@ class XMLProcessor:
             # Last resort fallback
             tree.write(output_file, encoding='utf-8', xml_declaration=True)
 
+    def _fix_cdata_escaping(self, xml_content: str) -> str:
+        """
+        Fix HTML entity escaping that occurs inside CDATA sections.
+        minidom incorrectly escapes & to &amp; even inside CDATA.
+        """
+        import re
+        
+        # Pattern to match CDATA sections
+        cdata_pattern = re.compile(r'<!\[CDATA\[(.*?)\]\]>', re.DOTALL)
+        
+        def fix_cdata_content(match):
+            cdata_content = match.group(1)
+            # Unescape HTML entities that were incorrectly escaped by minidom
+            fixed_content = cdata_content.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+            return f'<![CDATA[{fixed_content}]]>'
+        
+        return cdata_pattern.sub(fix_cdata_content, xml_content)
+
     def _ensure_proper_cdata_wrapping(self, xml_string: str, original_xml: str) -> str:
         """
         Ensure HTML content is properly wrapped in CDATA sections based on original structure.
@@ -667,14 +693,29 @@ class XMLProcessor:
         html_tags = [
             'Content', 'Description', 'Title', 'Banner', 'Summary', 'Body', 'Text',
             'Teaser', 'Introduction', 'Conclusion', 'Excerpt', 'Abstract',
-            'Details', 'Info', 'Note', 'Comment', 'Message', 'HTML'
+            'Details', 'Info', 'Note', 'Comment', 'Message', 'HTML', 'Image', 'URL'
         ]
         
         for tag in html_tags:
-            pattern = re.compile(f'<{tag}\\s*>(.*?)</{tag}\\s*>', re.DOTALL)
+            # Case-insensitive pattern matching
+            pattern = re.compile(f'<{tag}([^>]*)>(.*?)</{tag}\\s*>', re.DOTALL | re.IGNORECASE)
             
             def wrap_if_needed(match):
-                content = match.group(1)
+                attributes = match.group(1)
+                content = match.group(2)
+                
+                # Check if element has ignore attribute (case-insensitive)
+                if ('ignore="true"' in attributes.lower() or "ignore='true'" in attributes.lower() or
+                    'Ignore="True"' in attributes or "Ignore='True'" in attributes):
+                    # For ignored elements, preserve CDATA exactly as is
+                    if not ('<![CDATA[' in content and ']]>' in content):
+                        # If original had CDATA, restore it
+                        original_pattern = f'<{tag}[^>]*>.*?</{tag}\\s*>'
+                        original_matches = re.findall(original_pattern, original_xml, re.DOTALL | re.IGNORECASE)
+                        for orig_match in original_matches:
+                            if attributes.strip() in orig_match and '<![CDATA[' in orig_match:
+                                return f'<{tag}{attributes}><![CDATA[{content}]]></{tag}>'
+                    return match.group(0)
                 
                 # Skip if already has CDATA
                 if '<![CDATA[' in content:
@@ -683,14 +724,22 @@ class XMLProcessor:
                 # Check if content contains HTML or special characters
                 if (('<' in content and '>' in content) or 
                     ('&lt;' in content and '&gt;' in content) or
-                    ('&amp;' in content) or
-                    ('&' in content and content != html.escape(content))):
+                    ('&amp;' in content)):
                     
                     # If content has escaped HTML entities, unescape them first
                     if '&lt;' in content and '&gt;' in content:
                         content = content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
                     
-                    return f'<{tag}><![CDATA[{content}]]></{tag}>'
+                    return f'<{tag}{attributes}><![CDATA[{content}]]></{tag}>'
+                
+                # Check if this element originally had CDATA (even without HTML)
+                # This handles cases like URLs in Image elements
+                original_pattern = f'<{tag}[^>]*>.*?</{tag}\\s*>'
+                original_matches = re.findall(original_pattern, original_xml, re.DOTALL | re.IGNORECASE)
+                for orig_match in original_matches:
+                    if attributes.strip() in orig_match and '<![CDATA[' in orig_match:
+                        # Original had CDATA, so restore it to prevent HTML escaping
+                        return f'<{tag}{attributes}><![CDATA[{content}]]></{tag}>'
                 
                 return match.group(0)
             

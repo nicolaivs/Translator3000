@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Products>
+    <Product>
+        <Title>Test Product</Title>
+        <Image Ignore="True" Id="2141960"><![CDATA[https://micare.dk/media/2141960.jpg?w=240&format=jpg]]></Image>
+        <Description><![CDATA[<p>This is a <strong>test</strong> description.</p>]]></Description>
+        <URL ignore="true"><![CDATA[https://example.com/path?param=value&other=data]]></URL>
+    </Product>
+</Products>

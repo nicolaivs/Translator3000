@@ -112,8 +112,8 @@ class CSVProcessor:
         
         logger.info(f"Active translation services: {[name for name, _ in self.translators]}")
     
-    def _load_glossary(self) -> Dict[str, str]:
-        """Load glossary for custom translations."""
+    def _load_glossary(self) -> Dict[str, Dict[str, str]]:
+        """Load glossary for custom translations with case preservation support."""
         config = get_config()
         # Look for glossary.csv in the project root directory
         project_root = Path(__file__).parent.parent.parent
@@ -131,13 +131,28 @@ class CSVProcessor:
                     for _, row in df.iterrows():
                         source = str(row['source']).strip()
                         target = str(row['target']).strip()
+                        keep_case = str(row.get('keep_case', 'False')).strip().lower() == 'true'
+                        
                         if source and target:
-                            glossary[source.lower()] = target
+                            # Store both original case and lowercase for lookup
+                            glossary[source.lower()] = {
+                                'target': target,
+                                'keep_case': keep_case,
+                                'original_source': source
+                            }
                     logger.info(f"Loaded {len(glossary)} terms from glossary.csv")
                 
                 # Check for alternative format columns (original, translation)
                 elif 'original' in df.columns and 'translation' in df.columns:
-                    glossary = dict(zip(df['original'], df['translation']))
+                    for _, row in df.iterrows():
+                        original = str(row['original']).strip()
+                        translation = str(row['translation']).strip()
+                        if original and translation:
+                            glossary[original.lower()] = {
+                                'target': translation,
+                                'keep_case': False,  # Default for old format
+                                'original_source': original
+                            }
                     logger.info(f"Loaded {len(glossary)} terms from glossary.csv (alternative format)")
                 
                 else:
@@ -354,15 +369,51 @@ class CSVProcessor:
             return html_text
     
     def _apply_glossary_replacements(self, text: str) -> str:
-        """Apply glossary term replacements."""
+        """Apply glossary term replacements with proper case preservation."""
         if not self.glossary or not text:
             return text
         
         result = text
-        for original, translation in self.glossary.items():
-            if original.lower() in result.lower():
-                # Case-insensitive replacement preserving original case patterns
-                pattern = re.compile(re.escape(original), re.IGNORECASE)
-                result = pattern.sub(translation, result)
+        
+        # Apply replacements for each glossary term
+        for source_key, glossary_info in self.glossary.items():
+            target = glossary_info['target']
+            keep_case = glossary_info['keep_case']
+            original_source = glossary_info['original_source']
+            
+            if keep_case:
+                # Case-sensitive replacement - preserve original case patterns
+                # Try exact match first
+                if original_source in result:
+                    result = result.replace(original_source, target)
+                
+                # Then try other case variations while preserving the target's case
+                source_variations = [
+                    original_source.lower(),
+                    original_source.upper(),
+                    original_source.capitalize(),
+                    original_source.title()
+                ]
+                
+                for variation in source_variations:
+                    if variation in result and variation != original_source:
+                        # Apply case transformation to target based on the variation found
+                        if variation.isupper():
+                            transformed_target = target.upper()
+                        elif variation.islower():
+                            transformed_target = target.lower()
+                        elif variation.capitalize() == variation:
+                            transformed_target = target.capitalize()
+                        elif variation.title() == variation:
+                            transformed_target = target.title()
+                        else:
+                            transformed_target = target
+                        
+                        result = result.replace(variation, transformed_target)
+            else:
+                # Case-insensitive replacement - replace with exact target
+                # Use regex for case-insensitive replacement
+                pattern = re.compile(re.escape(original_source), re.IGNORECASE)
+                result = pattern.sub(target, result)
         
         return result

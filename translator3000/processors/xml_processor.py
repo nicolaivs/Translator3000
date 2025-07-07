@@ -685,6 +685,7 @@ class XMLProcessor:
     def _ensure_proper_cdata_wrapping(self, xml_string: str, original_xml: str) -> str:
         """
         Ensure HTML content is properly wrapped in CDATA sections based on original structure.
+        Never add CDATA to empty or whitespace-only content.
         """
         import re
         
@@ -697,28 +698,51 @@ class XMLProcessor:
         ]
         
         for tag in html_tags:
-            # Case-insensitive pattern matching
-            pattern = re.compile(f'<{tag}([^>]*)>(.*?)</{tag}\\s*>', re.DOTALL | re.IGNORECASE)
+            # Case-insensitive pattern matching - exclude self-closing tags
+            pattern = re.compile(f'<{tag}([^>]*?)>(.*?)</{tag}\\s*>', re.DOTALL | re.IGNORECASE)
             
             def wrap_if_needed(match):
                 attributes = match.group(1)
                 content = match.group(2)
                 
+                # CRITICAL: Never add CDATA to empty or whitespace-only content
+                # This prevents illegal XML for empty/self-closing elements
+                if not content or not content.strip():
+                    # If content is empty, remove any existing CDATA as well
+                    if '<![CDATA[' in content and ']]>' in content:
+                        # Extract just the content between CDATA tags
+                        cdata_content = self._extract_cdata_content(content)
+                        if not cdata_content or not cdata_content.strip():
+                            # Empty CDATA content, return element without CDATA
+                            return f'<{tag}{attributes}></{tag}>'
+                    return match.group(0)
+                
                 # Check if element has ignore attribute (case-insensitive)
                 if ('ignore="true"' in attributes.lower() or "ignore='true'" in attributes.lower() or
                     'Ignore="True"' in attributes or "Ignore='True'" in attributes):
-                    # For ignored elements, preserve CDATA exactly as is
-                    if not ('<![CDATA[' in content and ']]>' in content):
-                        # If original had CDATA, restore it
+                    # For ignored elements, preserve CDATA exactly as is, but drop if empty
+                    if '<![CDATA[' in content and ']]>' in content:
+                        cdata_content = self._extract_cdata_content(content)
+                        if not cdata_content or not cdata_content.strip():
+                            # Drop empty CDATA for ignored elements too
+                            return f'<{tag}{attributes}></{tag}>'
+                        return match.group(0)  # Keep existing CDATA if not empty
+                    else:
+                        # If original had CDATA but content is not empty, restore it
                         original_pattern = f'<{tag}[^>]*>.*?</{tag}\\s*>'
                         original_matches = re.findall(original_pattern, original_xml, re.DOTALL | re.IGNORECASE)
                         for orig_match in original_matches:
                             if attributes.strip() in orig_match and '<![CDATA[' in orig_match:
-                                return f'<{tag}{attributes}><![CDATA[{content}]]></{tag}>'
+                                if content.strip():  # Only restore if content is not empty
+                                    return f'<{tag}{attributes}><![CDATA[{content}]]></{tag}>'
                     return match.group(0)
                 
-                # Skip if already has CDATA
+                # Skip if already has CDATA (but check if it's empty CDATA)
                 if '<![CDATA[' in content:
+                    cdata_content = self._extract_cdata_content(content)
+                    if not cdata_content or not cdata_content.strip():
+                        # Drop empty CDATA
+                        return f'<{tag}{attributes}></{tag}>'
                     return match.group(0)
                 
                 # Check if content contains HTML or special characters

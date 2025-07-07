@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Products>
+    <Product>
+        <Title>Testprodukt</Title>
+        <EmptyTitle/>
+        <SelfClosingTitle/>
+        <Description><![CDATA[<p>Dette er en testbeskrivelse.</p>]]></Description>
+        <EmptyDescription/>
+        <Image Ignore="True" Id="123"><![CDATA[https://example.com/image.jpg]]></Image>
+        <EmptyImage/>
+    </Product>
+</Products>

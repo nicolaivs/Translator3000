@@ -394,44 +394,22 @@ Translation/
 3. **Translation fails**: Check internet connection and try increasing delay between requests
 4. **Large files**: For files with thousands of rows, consider processing in smaller batches
 5. **Encoding issues**: Ensure your CSV file is saved in UTF-8 encoding
+6. **Numbers get .0 added**: ✅ **FIXED** - Previously, CSV files with empty cells could cause numeric columns to get `.0` added (e.g., `7131525` became `7131525.0`). This has been resolved by improving how the processor handles missing values.
 
-### Logging
+### Glossary Behavior
 
-The script creates a `translation.log` file with detailed information about:
-- Translation progress
-- Error messages
-- Performance metrics
+The glossary supports case-sensitive term replacement:
+- **`keep_case=True`**: Always uses the target term exactly as specified (e.g., "KIT;KIT;True" will always replace any case variation with "KIT")
+- **`keep_case=False`**: Adapts the target case to match the original text pattern
 
-## Performance Tips
-
-- **Batch size**: Process large files in smaller chunks if needed
-- **Rate limiting**: Increase delay between requests if you encounter throttling
-- **Caching**: Consider implementing translation caching for repeated text
-- **Parallel processing**: For very large datasets, consider implementing parallel translation
-
-## License
-
-This project is open source. The `googletrans` library is subject to Google's Terms of Service.
-
-## Contributing
-
-Feel free to submit issues and enhancement requests!
-
-### Local LibreTranslate Setup (Optional - High Performance)
-
-For **8-15x faster translation** and complete privacy, you can run LibreTranslate locally using Docker:
-
-```bash
-# Quick setup - run LibreTranslate on localhost:5000
-docker run -p 5000:5000 libretranslate/libretranslate
+Example:
+```csv
+# glossary.csv
+source;target;keep_case
+KIT;KIT;True
+ajax;AJAX;False
 ```
 
-**Benefits:**
-- 🚀 **8-15x faster** than cloud services
-- 🔒 **Complete privacy** - data never leaves your machine  
-- 💰 **No rate limits** - translate as much as you want
-- 🌐 **Works offline** - no internet required
-
-Translator3000 **automatically detects** and prioritizes self hosted instances. When self hosted is available, it becomes the primary translation service!
-
-📖 **Detailed setup guide**: See [LOCALHOST_SETUP.md](LOCALHOST_SETUP.md) for complete Docker configuration options.
+With this glossary:
+- "kit", "Kit", "KIT" all become "KIT" (keep_case=True)
+- "Ajax" becomes "AJAX", "ajax" becomes "ajax" (keep_case=False adapts to original case)

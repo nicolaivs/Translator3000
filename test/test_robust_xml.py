@@ -10,7 +10,7 @@ Test script to verify the robust XML processor with BeautifulSoup handles:
 import sys
 import os
 import logging
-sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # Go up one directory to find translator3000
 
 from translator3000.processors.xml_processor import XMLProcessor
 from translator3000.processors.csv_processor import CSVProcessor

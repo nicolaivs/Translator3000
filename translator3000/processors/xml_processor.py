@@ -698,7 +698,15 @@ class XMLProcessor:
         ]
         
         for tag in html_tags:
-            # Case-insensitive pattern matching - exclude self-closing tags
+            # CRITICAL: Skip self-closing tags completely to prevent malformed XML
+            # First, check for and skip self-closing tags
+            self_closing_pattern = re.compile(f'<{tag}([^>]*?)/>', re.IGNORECASE)
+            if self_closing_pattern.search(xml_string):
+                # Self-closing tags found, skip processing for this tag entirely
+                # They are already correctly formatted and don't need CDATA
+                continue
+            
+            # Case-insensitive pattern matching - only match opening/closing tag pairs
             pattern = re.compile(f'<{tag}([^>]*?)>(.*?)</{tag}\\s*>', re.DOTALL | re.IGNORECASE)
             
             def wrap_if_needed(match):

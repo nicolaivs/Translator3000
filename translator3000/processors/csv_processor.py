@@ -332,16 +332,50 @@ class CSVProcessor:
             return html_text
     
     def _translate_html_with_beautifulsoup(self, html_text: str) -> str:
-        """Translate HTML using BeautifulSoup."""
+        """Translate HTML using BeautifulSoup with improved space preservation."""
         try:
             soup = BeautifulSoup(html_text, 'html.parser')
             
             for text_node in soup.find_all(string=True):
                 if text_node.parent.name not in ['script', 'style', 'meta', 'title']:
-                    text_content = text_node.strip()
+                    original_text = text_node.string
+                    text_content = original_text.strip()
+                    
                     if text_content and len(text_content) > 1:
+                        # Check if this text node or any parent has ignore attribute
+                        should_ignore = False
+                        current = text_node.parent
+                        
+                        while current and hasattr(current, 'get'):
+                            # Check for ignore attribute (case-insensitive)
+                            ignore_value = current.get('ignore', '') or current.get('Ignore', '')
+                            if ignore_value.lower() == 'true':
+                                should_ignore = True
+                                break
+                            current = current.parent if hasattr(current, 'parent') else None
+                        
+                        if should_ignore:
+                            continue  # Skip translation for ignored elements
+                        
                         translated = self._translate_plain_text(text_content)
-                        text_node.replace_with(translated)
+                        if translated and translated != text_content:
+                            # IMPROVED: Preserve surrounding whitespace more accurately
+                            leading_space = ''
+                            trailing_space = ''
+                            
+                            # Extract leading whitespace - find where content starts
+                            content_start = original_text.find(text_content)
+                            if content_start > 0:
+                                leading_space = original_text[:content_start]
+                            
+                            # Extract trailing whitespace - find where content ends
+                            content_end = content_start + len(text_content)
+                            if content_end < len(original_text):
+                                trailing_space = original_text[content_end:]
+                            
+                            # Replace with translated text preserving exact whitespace
+                            new_text = leading_space + translated + trailing_space
+                            text_node.replace_with(new_text)
             
             return str(soup)
             

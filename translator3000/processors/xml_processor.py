@@ -422,7 +422,9 @@ class XMLProcessor:
         """
         for element in soup.descendants:
             if isinstance(element, NavigableString) and not isinstance(element, CData):
-                text_content = element.string.strip()
+                original_text = element.string
+                text_content = original_text.strip()
+                
                 if text_content and len(text_content) > 1:  # Only translate meaningful text
                     # Check if this text node or any parent has ignore attribute
                     should_ignore = False
@@ -444,27 +446,23 @@ class XMLProcessor:
                     try:
                         translated = self.csv_processor.translate_text(text_content)
                         if translated and translated != text_content:
-                            # Preserve surrounding whitespace
-                            original = element.string
+                            # IMPROVED: Preserve surrounding whitespace more accurately
                             leading_space = ''
                             trailing_space = ''
                             
-                            # Extract leading whitespace
-                            for char in original:
-                                if char.isspace():
-                                    leading_space += char
-                                else:
-                                    break
+                            # Extract leading whitespace - find where content starts
+                            content_start = original_text.find(text_content)
+                            if content_start > 0:
+                                leading_space = original_text[:content_start]
                             
-                            # Extract trailing whitespace
-                            for char in reversed(original):
-                                if char.isspace():
-                                    trailing_space = char + trailing_space
-                                else:
-                                    break
+                            # Extract trailing whitespace - find where content ends
+                            content_end = content_start + len(text_content)
+                            if content_end < len(original_text):
+                                trailing_space = original_text[content_end:]
                             
-                            # Replace with translated text preserving whitespace
-                            element.replace_with(leading_space + translated + trailing_space)
+                            # Replace with translated text preserving exact whitespace
+                            new_text = leading_space + translated + trailing_space
+                            element.replace_with(new_text)
                     except Exception as e:
                         logger.warning(f"Failed to translate text node: {e}")
 

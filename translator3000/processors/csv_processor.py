@@ -416,34 +416,10 @@ class CSVProcessor:
             original_source = glossary_info['original_source']
             
             if keep_case:
-                # Case-sensitive replacement - preserve original case patterns
-                # Try exact match first
-                if original_source in result:
-                    result = result.replace(original_source, target)
-                
-                # Then try other case variations while preserving the target's case
-                source_variations = [
-                    original_source.lower(),
-                    original_source.upper(),
-                    original_source.capitalize(),
-                    original_source.title()
-                ]
-                
-                for variation in source_variations:
-                    if variation in result and variation != original_source:
-                        # Apply case transformation to target based on the variation found
-                        if variation.isupper():
-                            transformed_target = target.upper()
-                        elif variation.islower():
-                            transformed_target = target.lower()
-                        elif variation.capitalize() == variation:
-                            transformed_target = target.capitalize()
-                        elif variation.title() == variation:
-                            transformed_target = target.title()
-                        else:
-                            transformed_target = target
-                        
-                        result = result.replace(variation, transformed_target)
+                # For keep_case=True, always use the target exactly as specified in glossary
+                # Use regex with word boundaries for accurate matching
+                pattern = re.compile(r'\b' + re.escape(original_source) + r'\b', re.IGNORECASE)
+                result = pattern.sub(target, result)
             else:
                 # Case-insensitive replacement - replace with exact target
                 # Use regex for case-insensitive replacement

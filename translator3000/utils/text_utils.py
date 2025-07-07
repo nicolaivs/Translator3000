@@ -112,11 +112,11 @@ def apply_glossary_replacements(text: str, glossary: Dict[str, Dict[str, str]]) 
             matched_text = match.group(0)
             
             if keep_case:
-                # Preserve the case pattern of the original match
-                return preserve_case(matched_text, target_term)
-            else:
-                # Use target term as-is
+                # For keep_case=True, use the target term exactly as specified in glossary
                 return target_term
+            else:
+                # For keep_case=False, adapt target case to match the original text
+                return preserve_case(matched_text, target_term)
         
         result = pattern.sub(replace_match, result)
     
